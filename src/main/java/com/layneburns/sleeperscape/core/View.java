@@ -10,12 +10,17 @@ public final class View
 	{
 		public String leagueId;
 		public String alias;
+		/** The league's full name. */
+		public String leagueName;
 		public String myOwner;
 		public double my;
 		public String oppOwner;
 		public Double opp;
 		/** 0..1, or null when it can't be estimated (no ESPN clock or no projections yet). */
 		public Double winProbability;
+		/** Projected finals (current score plus what's still projected), or null like winProbability. */
+		public Double myProjected;
+		public Double oppProjected;
 		/** Starters whose games aren't over, or null without ESPN. */
 		public Integer myLeft;
 		public Integer oppLeft;

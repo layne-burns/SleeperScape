@@ -92,7 +92,7 @@ Each category has a sign and a significance. The tier is from **my** point of vi
 | | 2-pt conversion (`*_2pt`) | ✔ | SCORED |
 | | Return TD (`kr_td`,`pr_td`,`st_td`, fumble-recovery TD) | ✔ | SCORED |
 | | Big play ≥ `bigPlayYards` (default 20) rush/rec/pass. Level 3 confirms; at level 2 only when attempts/receptions grew by exactly 1 | ✔ | VERY_GOOD |
-| | Milestone bonus (`bonus_*` the league scores, e.g. 100-yd rush/rec, 300-yd pass) | ✔ | VERY_GOOD |
+| | Milestone bonus (`bonus_*` **only if the league scores that key**: the stat line carries bonus keys that tick on ordinary plays, which first showed as false MILESTONEs) | ✔ | VERY_GOOD |
 | | INT thrown (`pass_int`), pick-six (`pass_int_td`), fumble lost (`fum_lost`) | ✔ | VERY_BAD |
 | | Fumble not lost (`fum`), sacked (`pass_sack`), incompletion penalty | – | BAD |
 | | Yards, receptions, carries, first downs, completions | – | GOOD |
@@ -108,6 +108,7 @@ Each category has a sign and a significance. The tier is from **my** point of vi
 | | Tackle solo/assist, TFL, QB hit, pass defended (`idp_tkl_*`,`idp_qb_hit`,`idp_pass_def`) | – | GOOD |
 | Special teams | Takeaway on a kick or punt (`def_st_ff`,`def_st_fum_rec` for team DEF; `st_ff`,`st_fum_rec` for players) | ✔ | VERY_GOOD |
 | Matchup | Lead change (I take the lead / lose it) | ✔ | VERY_GOOD / VERY_BAD |
+| | Projected lead change (the side projected to win flips; needs 52 %/48 % to flip back, so a coin-flip matchup doesn't spam) | ✔ | VERY_GOOD / VERY_BAD |
 | | Matchup final (win / loss) | ✔ | SCORED / SCORED_ON |
 | Other | Correction (no stat explanation); "TD overturned" | TD only | by sign |
 | | **BIG SWING**: ±4 points or more with no stat line to explain it (the stat feed lagging), so a likely TD is never shown as routine | ✔ | VERY_GOOD / VERY_BAD |
@@ -127,18 +128,31 @@ Each category has a sign and a significance. The tier is from **my** point of vi
   - League list: toggle and alias.
   - Delay: preset buttons **30 s / 60 s / 90 s / 120 s** that snap to that value, plus ±5 s buttons to fine-tune.
   - Mute toggle, which pauses banner, chat, overhead text and reactions; the feed continues.
+  - **My side of the ball** (live, like the red zone; side panel only): each live game where my starters are
+    on the field: offense (QB/RB/WR/TE/K) while their team has the ball, IDP/DEF while it doesn't. Shows
+    `DAL @ PHI · PHI ball`, a RED ZONE marker, and each player with their leagues (`on D` for defenders).
+    The last team seen with the ball is kept between snaps (ESPN omits it); cleared at halftime.
   - Full feed of *every* delta (filters applied), newest first. Each entry: time, headline (significant only) and player; then each league's side as `[ALIAS ±points] Owner` (`You` for mine, else the opponent's Sleeper name); then the breakdown.
   - Row background, for every play: **green** when it only helps me, **red** when it only hurts me, **orange** when it does both (my player in one league, my opponent's in another). Significant plays get a stronger tint.
   - Feed colours (also chat and banner): routine plays neutral; significant plays **green when good for me, red when bad for me** (so my opponent's QB throwing a pick is green), and **pink for my scoring plays** (TD, 2-pt, FG). Each `[league ±pts]` tag is coloured by how the play went for me in that league; the headline and name by how it went overall.
   - Mixed plays (the same player is mine in one league and my opponent's in another): the stronger side wins; when both are equally strong, my net fantasy points across those leagues decide (`Tier.combine`), and an exact wash is neutral (and a shrug).
-- **Scoreboard overlay** (delayed), compact (small font, ~150 px), three lines per enabled league:
-  - `RD          62% · 3v2 left` (alias, then win % and starters left, each only when known; both need ESPN)
-  - `LBBurnsy   87.4` (my username in pink; my score **green while I lead**, neutral otherwise)
-  - `Opponent   79.1` (their username in red; their score **red while they lead**, neutral otherwise)
-  - Usernames only, no team names (changed 2026-10-11 after first use: the team-name version was too large).
+- **Scoreboard overlay** (delayed), compact small-font table, per enabled league:
+  - Header: the league's **full name** (muted), starters left (`3v2 left`) on the right when known.
+  - Then me and my opponent, by Sleeper username: `name | score | projected final | win %` (projection
+    dimmed; projected final = score + what starters still project to add; both it and win % need ESPN and
+    projections).
+  - Colours follow the **win probability**: above 50 % my name and score are green (theirs white); below 50 %
+    their name and score are red (mine white); exactly 50 % both white. Without a win probability, whoever
+    leads on points takes the colour.
+  - Usernames only, no team names (changed 2026-10-11: the team-name version was too large).
 - **Banner overlay** (significant plays): fades after `bannerSeconds` (5). Shows the play and each league's impact. Coalesces bursts.
 - **Chat**: game message for significant plays (`chatMode`: off / significant / all). Format: `[RD] Hurts 12-yd TD run +7.2`.
-- **Overhead text** with every reaction (and every significant play) on the local player, for the reaction's length (6 s): the play, then the leagues it helps and hurts me in, e.g. `TOUCHDOWN Hurts! Helps RD, hurts DYN1`, `INTERCEPTION Winston... Helps UND, hurts KCL`, `Kelce 8 rec yd... Hurts DYN1`, `Took the lead in RD!`.
+- **Overhead text** with every reaction (and every significant play) over the local player, for the reaction's length (6 s): the play, then the leagues it helps and hurts me in, e.g. `TOUCHDOWN Hurts! Helps RD, hurts DYN1`, `INTERCEPTION Winston... Helps UND, hurts KCL`, `Kelce 8 rec yd... Hurts DYN1`, `Took the lead in RD!`.
+  - Drawn by an overlay (`OverheadOverlay`) in the bold game font with a black shadow, because RuneLite
+    exposes no way to set real overhead text's colour or effect (and reflection is forbidden).
+  - Chat-effect rules: routine plays **yellow**; significant plays coloured (**green** good, **red** bad,
+    **orange** both), with "Helps …" green and "hurts …" red; my scoring plays and a matchup win **wave2 +
+    glow** (pink/white/green); scored on or a matchup loss **shake + red flash**.
 - **Avatar reactions**, by tier:
 
   | Tier | Reaction |
@@ -236,6 +250,9 @@ Computed from the delayed snapshot. It won't match the Sleeper app's number.
 - Local build against RuneLite 1.13.1 compiled with no fixes; core tests pass.
 - Confirmed live: `v1/state/nfl`; all three stats URLs; projections (`api.sleeper.com`, 5.7 MB array); the ESPN scoreboard.
 - `*_lng` stat keys exist (e.g. `fgm_lng`).
+
+- Scores in messages are joined with ` - `: the game font has no en dash (`85.0–84.6` showed as `85.084.6`).
+- Icon: hand-placed 16×16 pixel-art pink football (pointed tips, four stitches), since sidebar icons are drawn at 16 px.
 
 ## Open items (resolved during phases)
 

@@ -15,6 +15,13 @@ final class Colors
 	static final Color NEUTRAL = new Color(220, 220, 220);
 	/** My score while I lead. */
 	static final Color WINNING = new Color(80, 220, 100);
+
+	// Overhead text, in the game's own chat colours (bright, over a black shadow).
+	static final Color TEXT_YELLOW = new Color(255, 255, 0);
+	static final Color TEXT_GREEN = new Color(0, 255, 0);
+	static final Color TEXT_RED = new Color(255, 0, 0);
+	static final Color TEXT_RED_LIGHT = new Color(255, 140, 140);
+	static final Color TEXT_ORANGE = new Color(255, 152, 31);
 	static final Color MUTED = new Color(150, 150, 150);
 
 	private Colors()

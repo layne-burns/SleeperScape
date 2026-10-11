@@ -7,6 +7,7 @@ import com.layneburns.sleeperscape.core.LeagueContext;
 import com.layneburns.sleeperscape.core.PlayEvent;
 import com.layneburns.sleeperscape.core.Poller;
 import com.layneburns.sleeperscape.core.RedZoneAlert;
+import com.layneburns.sleeperscape.core.SideOfBall;
 import com.layneburns.sleeperscape.core.View;
 import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
@@ -91,10 +92,15 @@ public class SleeperScapePlugin extends Plugin
 	@Inject
 	private RedZoneOverlay redZoneOverlay;
 
+	@Inject
+	private OverheadOverlay overheadOverlay;
+
+	@Inject
+	private Reactor reactor;
+
 	private Settings settings;
 	private SleeperScapePanel panel;
 	private NavigationButton navButton;
-	private Reactor reactor;
 	private Recorder recorder;
 	private ScheduledExecutorService exec;
 	private Poller poller;
@@ -103,7 +109,6 @@ public class SleeperScapePlugin extends Plugin
 	protected void startUp() throws Exception
 	{
 		settings = new Settings(config, configManager);
-		reactor = new Reactor(client, config);
 		recorder = new Recorder(gson, () -> getPluginDirectory().join("recordings"), config::record);
 		exec = Executors.newSingleThreadScheduledExecutor(r ->
 		{
@@ -125,6 +130,7 @@ public class SleeperScapePlugin extends Plugin
 		overlayManager.add(scoreboardOverlay);
 		overlayManager.add(bannerOverlay);
 		overlayManager.add(redZoneOverlay);
+		overlayManager.add(overheadOverlay);
 
 		startPolling();
 		log.debug("SleeperScape started");
@@ -138,6 +144,7 @@ public class SleeperScapePlugin extends Plugin
 		overlayManager.remove(scoreboardOverlay);
 		overlayManager.remove(bannerOverlay);
 		overlayManager.remove(redZoneOverlay);
+		overlayManager.remove(overheadOverlay);
 		clientToolbar.removeNavigation(navButton);
 		reactor.clear();
 		bannerOverlay.clear();
@@ -187,7 +194,11 @@ public class SleeperScapePlugin extends Plugin
 				stopPolling();
 				state.view = View.EMPTY;
 				state.redZones = List.of();
-				SwingUtilities.invokeLater(panel::clearFeed);
+				SwingUtilities.invokeLater(() ->
+				{
+					panel.clearFeed();
+					panel.setSideOfBall(List.of());
+				});
 				startPolling();
 			});
 		}
@@ -241,6 +252,12 @@ public class SleeperScapePlugin extends Plugin
 		public void updated(PlayEvent e)
 		{
 			SwingUtilities.invokeLater(() -> panel.updatePlay(e));
+		}
+
+		@Override
+		public void sideOfBall(List<SideOfBall> games)
+		{
+			SwingUtilities.invokeLater(() -> panel.setSideOfBall(games));
 		}
 
 		@Override

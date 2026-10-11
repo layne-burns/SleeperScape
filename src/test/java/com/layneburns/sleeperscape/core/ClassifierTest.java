@@ -25,7 +25,7 @@ public class ClassifierTest
 
 	private static EnumSet<Category> cats(Map<String, Double> d, boolean def)
 	{
-		return Classifier.categories(d, def, 1, 20);
+		return Classifier.categories(d, def, 1, 20, null);
 	}
 
 	@Test
@@ -36,7 +36,12 @@ public class ClassifierTest
 		assertEquals(Category.INTERCEPTION_THROWN, cats(diff("pass_int", 1), false).iterator().next());
 		assertEquals(Category.FUMBLE_LOST, cats(diff("fum", 1, "fum_lost", 1), false).iterator().next());
 		assertEquals(Category.TWO_POINT, cats(diff("rush_2pt", 1), false).iterator().next());
-		assertEquals(Category.MILESTONE, cats(diff("bonus_rush_yd_100", 1, "rush_yd", 4, "rush_att", 1), false).iterator().next());
+		Map<String, Double> bonus = new HashMap<>();
+		bonus.put("bonus_rush_yd_100", 3.0);
+		Map<String, Double> hundred = diff("bonus_rush_yd_100", 1, "rush_yd", 4, "rush_att", 1);
+		assertEquals(Category.MILESTONE, Classifier.categories(hundred, false, 3.4, 20, bonus).iterator().next());
+		// A bonus key the league doesn't pay for is not a milestone (the stat line has these ticking).
+		assertFalse(cats(hundred, false).contains(Category.MILESTONE));
 		assertTrue(cats(diff("rec", 1, "rec_yd", 25), false).contains(Category.BIG_PLAY));
 		assertFalse(cats(diff("rec", 2, "rec_yd", 25), false).contains(Category.BIG_PLAY));
 		assertEquals(Category.PLAY, cats(diff("rec", 1, "rec_yd", 8), false).iterator().next());
@@ -64,9 +69,9 @@ public class ClassifierTest
 	public void corrections()
 	{
 		assertEquals(Category.TD_OVERTURNED, cats(diff("rush_td", -1, "rush_yd", -3), false).iterator().next());
-		assertEquals(Category.CORRECTION, Classifier.categories(diff(), false, -2, 20).iterator().next());
+		assertEquals(Category.CORRECTION, Classifier.categories(diff(), false, -2, 20, null).iterator().next());
 		// Points up with no stats yet: the stat feed lagging, not a correction.
-		assertEquals(Category.PLAY, Classifier.categories(diff(), false, 2, 20).iterator().next());
+		assertEquals(Category.PLAY, Classifier.categories(diff(), false, 2, 20, null).iterator().next());
 	}
 
 	@Test

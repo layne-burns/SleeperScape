@@ -50,9 +50,10 @@ public final class Classifier
 	 * @param teamDefense  whether the player is a team DEF (whose int/fum_rec/sack are takeaways)
 	 * @param pointsDelta  the points the change was worth (any league), for an unexplained correction
 	 * @param bigPlayYards a single gain at least this long is a big play
+	 * @param scoring      the league's scoring, or null: a milestone counts only when the league scores it
 	 */
 	public static EnumSet<Category> categories(Map<String, Double> diff, boolean teamDefense, double pointsDelta,
-		int bigPlayYards)
+		int bigPlayYards, Map<String, Double> scoring)
 	{
 		EnumSet<Category> cats = EnumSet.noneOf(Category.class);
 		for (Map.Entry<String, Double> e : diff.entrySet())
@@ -140,9 +141,10 @@ public final class Classifier
 			{
 				cats.add(Category.BIG_PLAY);
 			}
-			else if (MILESTONE.matcher(k).matches())
+			else if (MILESTONE.matcher(k).matches() && scores(scoring, k))
 			{
-				// Per-reception premiums (bonus_rec_te) carry no threshold, so they don't match.
+				// Only bonuses the league pays for: the stat line carries bonus_* keys that tick on ordinary
+				// plays. Per-reception premiums (bonus_rec_te) carry no threshold, so they don't match.
 				cats.add(Category.MILESTONE);
 			}
 		}
@@ -159,6 +161,12 @@ public final class Classifier
 			cats.add(diff.isEmpty() && pointsDelta < 0 ? Category.CORRECTION : Category.PLAY);
 		}
 		return cats;
+	}
+
+	private static boolean scores(Map<String, Double> scoring, String key)
+	{
+		Double w = scoring == null ? null : scoring.get(key);
+		return w != null && Math.abs(w) > 1e-9;
 	}
 
 	/** Takeaways on kicks and punts: def_st_ff, def_st_fum_rec (team DEF), st_ff, st_fum_rec (players). */

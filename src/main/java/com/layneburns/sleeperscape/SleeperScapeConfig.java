@@ -131,7 +131,7 @@ public interface SleeperScapeConfig extends Config
 	@ConfigItem(
 		keyName = "showWinProbability",
 		name = "Win probability",
-		description = "Estimated from projections and game time left (needs ESPN data)",
+		description = "Win % column on the scoreboard, estimated from projections and game time left (needs ESPN data). Projected finals show either way when known",
 		section = displaySection,
 		position = 4
 	)
@@ -181,7 +181,7 @@ public interface SleeperScapeConfig extends Config
 	@ConfigItem(
 		keyName = "overheadText",
 		name = "Overhead text",
-		description = "Text over your character with each reaction: the play and the leagues it helps or hurts",
+		description = "Text over your character with each reaction: the play and the leagues it helps or hurts. Yellow for routine plays, green/red for significant ones, wave and glow for your scores, shake and flash when scored on",
 		section = displaySection,
 		position = 8
 	)

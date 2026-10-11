@@ -5,6 +5,8 @@ import com.layneburns.sleeperscape.core.PlayEvent;
 import com.layneburns.sleeperscape.core.Tier;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ThreadLocalRandom;
+import javax.inject.Inject;
+import javax.inject.Singleton;
 import net.runelite.api.Client;
 import net.runelite.api.Player;
 import net.runelite.api.gameval.AnimationID;
@@ -19,6 +21,7 @@ import net.runelite.api.gameval.SpotanimID;
  * Plays arrive from the engine thread; everything else runs on the client thread from {@link #onClientTick()}.
  * A waiting play stronger than the one playing interrupts it; otherwise the strongest waiting play goes next.
  */
+@Singleton
 class Reactor
 {
 	private static final int[] GOOD = {AnimationID.EMOTE_YES, AnimationID.EMOTE_CLAP, AnimationID.EMOTE_WAVE,
@@ -33,8 +36,6 @@ class Reactor
 
 	// Key in the player's spot-anim table, clear of the slots the server uses.
 	private static final int SPOTANIM_KEY = 0x51EE9;
-	// Client cycles are 20 ms.
-	private static final int MS_PER_CYCLE = 20;
 	// Restart the graphic at least this often, in case a finished one lingers in the actor's table.
 	private static final long SPOTANIM_REPEAT_MS = 3000;
 
@@ -44,11 +45,14 @@ class Reactor
 
 	/** The reaction playing now, or null. */
 	private PlayEvent current;
+	/** Its text, drawn by {@link OverheadOverlay}. */
+	private volatile Speech speech;
 	private volatile long endsAt;
 	private int animation = -1;
 	private int spotanim = -1;
 	private long spotanimAt;
 
+	@Inject
 	Reactor(Client client, SleeperScapeConfig config)
 	{
 		this.client = client;
@@ -66,6 +70,13 @@ class Reactor
 	{
 		queue.clear();
 		endsAt = 0;
+		speech = null;
+	}
+
+	/** The overhead text to draw now, or null. */
+	Speech speech()
+	{
+		return speech;
 	}
 
 	/** On the client thread, every client tick. */
@@ -133,12 +144,8 @@ class Reactor
 		}
 		current = e;
 		endsAt = now + length;
-		if (text)
-		{
-			// Every reaction says what caused it; significant plays get the text even with their emote tier off.
-			me.setOverheadText(Text.overhead(e));
-			me.setOverheadCycle((int) (length / MS_PER_CYCLE));
-		}
+		// Every reaction says what caused it; significant plays get the text even with their emote tier off.
+		speech = text ? Text.speech(e, now, length) : null;
 		animation = -1;
 		spotanim = -1;
 		if (!react)

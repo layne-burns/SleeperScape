@@ -5,6 +5,7 @@ import com.layneburns.sleeperscape.core.Format;
 import com.layneburns.sleeperscape.core.PlayEvent;
 import com.layneburns.sleeperscape.core.RedZoneAlert;
 import com.layneburns.sleeperscape.core.Tier;
+import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -58,12 +59,67 @@ final class Text
 
 	/**
 	 * Over my character with each reaction: the play, then the leagues it helps and hurts me in, e.g.
-	 * "TOUCHDOWN Hurts! Helps RD, hurts DYN1" or "Kelce 8 rec yd... Hurts DYN1".
+	 * "TOUCHDOWN Hurts! Helps RD, hurts DYN1" or "Kelce 8 rec yd... Hurts DYN1". Routine plays are plain yellow;
+	 * significant ones coloured (green good, red bad, orange both); my scores wave and glow; being scored on
+	 * shakes and flashes red.
 	 */
-	static String overhead(PlayEvent e)
+	static Speech speech(PlayEvent e, long now, long length)
 	{
 		Tier t = e.tier;
 		boolean good = t != null && t.positive();
+		Speech.Style style;
+		if (t == Tier.SCORED)
+		{
+			style = Speech.Style.SCORED;
+		}
+		else if (t == Tier.SCORED_ON)
+		{
+			style = Speech.Style.SCORED_ON;
+		}
+		else if (e.significant() || e.isMatchupEvent())
+		{
+			style = Speech.Style.SIGNIFICANT;
+		}
+		else
+		{
+			style = Speech.Style.PLAIN;
+		}
+		Speech s = new Speech(style, now, now + length);
+		boolean plain = style == Speech.Style.PLAIN;
+		Color main = plain ? Colors.TEXT_YELLOW
+			: t == null || t == Tier.CONFLICTED ? Colors.TEXT_ORANGE
+			: good ? Colors.TEXT_GREEN : Colors.TEXT_RED;
+		s.add(headline(e, good), main);
+		if (e.isMatchupEvent())
+		{
+			return s;
+		}
+		List<String> helps = new ArrayList<>();
+		List<String> hurts = new ArrayList<>();
+		for (PlayEvent.Impact i : e.visible)
+		{
+			if (i.tier == null || i.tier == Tier.CONFLICTED)
+			{
+				continue;
+			}
+			(i.tier.positive() ? helps : hurts).add(i.alias);
+		}
+		if (!helps.isEmpty())
+		{
+			s.add(" Helps " + String.join(", ", helps), plain ? Colors.TEXT_YELLOW : Colors.TEXT_GREEN);
+		}
+		if (!hurts.isEmpty())
+		{
+			s.add((helps.isEmpty() ? " Hurts " : ", hurts ") + String.join(", ", hurts),
+				plain ? Colors.TEXT_YELLOW : Colors.TEXT_RED);
+		}
+		return s;
+	}
+
+	/** The play itself: "TOUCHDOWN Hurts!", "Kelce 8 rec yd...", "Took the lead in RD!". */
+	static String headline(PlayEvent e, boolean good)
+	{
+		Tier t = e.tier;
 		String alias = e.visible.isEmpty() ? "" : e.visible.get(0).alias;
 		if (e.top() == Category.MATCHUP_FINAL)
 		{
@@ -72,6 +128,10 @@ final class Text
 		if (e.top() == Category.LEAD_CHANGE)
 		{
 			return good ? "Took the lead in " + alias + "!" : "Lost the lead in " + alias + "...";
+		}
+		if (e.top() == Category.PROJECTED_LEAD)
+		{
+			return good ? "Now projected to win " + alias + "!" : "Now projected to lose " + alias + "...";
 		}
 		String what;
 		if (e.significant())
@@ -86,33 +146,7 @@ final class Text
 		{
 			what = e.shortName() + " " + Format.points(e.visible.get(0).delta);
 		}
-		String end = t == null || t == Tier.CONFLICTED ? "." : good ? "!" : "...";
-		return what + end + effects(e);
-	}
-
-	/** " Helps RD, DYN1, hurts UND" from each league's tier for me. */
-	private static String effects(PlayEvent e)
-	{
-		List<String> helps = new ArrayList<>();
-		List<String> hurts = new ArrayList<>();
-		for (PlayEvent.Impact i : e.visible)
-		{
-			if (i.tier == null || i.tier == Tier.CONFLICTED)
-			{
-				continue;
-			}
-			(i.tier.positive() ? helps : hurts).add(i.alias);
-		}
-		StringBuilder sb = new StringBuilder();
-		if (!helps.isEmpty())
-		{
-			sb.append(" Helps ").append(String.join(", ", helps));
-		}
-		if (!hurts.isEmpty())
-		{
-			sb.append(helps.isEmpty() ? " Hurts " : ", hurts ").append(String.join(", ", hurts));
-		}
-		return sb.toString();
+		return what + (t == null || t == Tier.CONFLICTED ? "." : good ? "!" : "...");
 	}
 
 	static String redZoneChat(RedZoneAlert a)

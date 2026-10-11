@@ -25,6 +25,8 @@ public enum Category
 	BIG_SWING("BIG SWING", true, null),
 	POINTS_ALLOWED("POINTS ALLOWED", true, null),
 	LEAD_CHANGE("LEAD CHANGE", true, null),
+	/** The side projected to win flipped (win probability crossed 50%, with a little hysteresis). */
+	PROJECTED_LEAD("PROJECTED LEAD CHANGE", true, null),
 	MATCHUP_FINAL("FINAL", true, null),
 	FUMBLE("FUMBLE", false, Tier.BAD),
 	SACKED("SACKED", false, Tier.BAD),

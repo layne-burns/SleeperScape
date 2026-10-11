@@ -22,6 +22,7 @@ public class EngineTest
 
 	private final List<PlayEvent> released = new ArrayList<>();
 	private final List<RedZoneAlert> entered = new ArrayList<>();
+	private final List<List<SideOfBall>> sides = new ArrayList<>();
 	private int delay;
 	private boolean startersOnly = true;
 	private Engine engine;
@@ -75,6 +76,11 @@ public class EngineTest
 			public void redZone(List<RedZoneAlert> active, List<RedZoneAlert> enteredNow)
 			{
 				entered.addAll(enteredNow);
+			}
+
+			public void sideOfBall(List<SideOfBall> games)
+			{
+				sides.add(games);
 			}
 		});
 		setUpEngine();
@@ -467,5 +473,109 @@ public class EngineTest
 		assertEquals(Tier.VERY_GOOD, e.visible.get(0).tier);
 		assertEquals(Tier.VERY_BAD, e.visible.get(1).tier);
 		assertEquals("Team 2", e.visible.get(1).ownerName);
+	}
+
+	private static Espn.Game espn(String id, String state, String home, String away)
+	{
+		Espn.Game g = new Espn.Game();
+		g.id = id;
+		g.state = state;
+		g.home = home;
+		g.away = away;
+		return g;
+	}
+
+	@Test
+	public void projectedLeadChangeIsAnnouncedOnceTheFavouriteFlips()
+	{
+		Map<String, Map<String, Double>> proj = new HashMap<>();
+		Map<String, Double> hurts = new HashMap<>();
+		hurts.put("pass_yd", 250.0);
+		Map<String, Double> kelce = new HashMap<>();
+		kelce.put("rec", 10.0);
+		kelce.put("rec_yd", 200.0);
+		proj.put(HURTS, hurts);
+		proj.put(KELCE, kelce);
+		engine.setProjections(proj);
+
+		Engine.Cycle c1 = cycle(1000, 10, 5);
+		c1.games = new HashMap<>();
+		c1.games.put("PHI", espn("1", "pre", "PHI", "DAL"));
+		c1.games.put("KC", espn("2", "pre", "KC", "LV"));
+		engine.ingest(c1);
+		// Hurts goes off and his game ends: RD (mine) flips to me, DYN (his owner's) flips away from me.
+		Engine.Cycle c2 = cycle(11_000, 40, 5);
+		c2.games = new HashMap<>();
+		c2.games.put("PHI", espn("1", "post", "PHI", "DAL"));
+		c2.games.put("KC", espn("2", "pre", "KC", "LV"));
+		engine.ingest(c2);
+		View v = engine.tick(11_000 + Engine.DETAIL_GRACE_MS);
+
+		Tier rd = null;
+		Tier dyn = null;
+		for (PlayEvent e : released)
+		{
+			if (e.top() == Category.PROJECTED_LEAD)
+			{
+				if (RD.equals(e.visible.get(0).leagueId))
+				{
+					rd = e.tier;
+				}
+				else
+				{
+					dyn = e.tier;
+				}
+			}
+		}
+		assertEquals(Tier.VERY_GOOD, rd);
+		assertEquals(Tier.VERY_BAD, dyn);
+		View.Line line = v.lines.get(0);
+		assertEquals(40, line.myProjected, 1e-9);
+		assertEquals(35, line.oppProjected, 1e-9);
+		assertEquals(RD, line.leagueName);
+	}
+
+	@Test
+	public void sideOfBallListsMyOffenceWithTheBallAndMyDefenceWithout()
+	{
+		Sleeper.Player dal = new Sleeper.Player();
+		dal.player_id = "DAL";
+		dal.position = "DEF";
+		dal.team = "DAL";
+		Map<String, Sleeper.Player> players = new HashMap<>();
+		players.put(HURTS, player(HURTS, "Jalen", "Hurts", "QB", "PHI"));
+		players.put(KELCE, player(KELCE, "Travis", "Kelce", "TE", "KC"));
+		players.put("DAL", dal);
+		engine.setPlayers(players);
+
+		Engine.Cycle c = cycle(1000, 10, 5);
+		Sleeper.Matchup mine = c.matchups.get(RD).get(0);
+		mine.starters = Arrays.asList(HURTS, "DAL");
+		mine.players_points.put("DAL", 3.0);
+		Espn.Game g = espn("9", "in", "PHI", "DAL");
+		g.possession = "PHI";
+		c.games = new HashMap<>();
+		c.games.put("PHI", g);
+		c.games.put("DAL", g);
+		engine.ingest(c);
+
+		List<SideOfBall> now = sides.get(sides.size() - 1);
+		assertEquals(1, now.size());
+		assertEquals("PHI", now.get(0).teamWithBall);
+		assertEquals(2, now.get(0).entries.size());
+		assertEquals("Jalen Hurts", now.get(0).entries.get(0).name);
+		assertTrue(!now.get(0).entries.get(0).defense);
+		assertTrue(now.get(0).entries.get(1).defense);
+
+		// Between snaps ESPN drops possession: the last team with the ball is kept.
+		Engine.Cycle c2 = cycle(11_000, 10, 5);
+		c2.matchups.get(RD).get(0).starters = Arrays.asList(HURTS, "DAL");
+		c2.matchups.get(RD).get(0).players_points.put("DAL", 3.0);
+		Espn.Game g2 = espn("9", "in", "PHI", "DAL");
+		c2.games = new HashMap<>();
+		c2.games.put("PHI", g2);
+		c2.games.put("DAL", g2);
+		engine.ingest(c2);
+		assertEquals("PHI", sides.get(sides.size() - 1).get(0).teamWithBall);
 	}
 }

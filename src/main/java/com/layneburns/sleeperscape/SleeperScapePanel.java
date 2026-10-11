@@ -4,6 +4,7 @@ import com.layneburns.sleeperscape.core.Format;
 import com.layneburns.sleeperscape.core.LeagueContext;
 import com.layneburns.sleeperscape.core.Owner;
 import com.layneburns.sleeperscape.core.PlayEvent;
+import com.layneburns.sleeperscape.core.SideOfBall;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -13,6 +14,7 @@ import java.awt.Insets;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.text.SimpleDateFormat;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -49,6 +51,8 @@ class SleeperScapePanel extends PluginPanel
 	private final JCheckBox mute = new JCheckBox("Mute pop-ups, chat & reactions");
 	private final JPanel leaguesPanel = new JPanel();
 	private final JPanel feed = new JPanel();
+	private final JLabel sideOfBall = new JLabel();
+	private String sideOfBallKey;
 	private final Map<Long, JLabel> feedLabels = new HashMap<>();
 	private final SimpleDateFormat clock = new SimpleDateFormat("h:mm");
 
@@ -99,6 +103,14 @@ class SleeperScapePanel extends PluginPanel
 		leaguesPanel.setLayout(new BoxLayout(leaguesPanel, BoxLayout.Y_AXIS));
 		leaguesPanel.setOpaque(false);
 		top.add(left(leaguesPanel));
+		top.add(Box.createVerticalStrut(8));
+
+		JLabel sideTitle = new JLabel("My side of the ball (live)");
+		sideTitle.setForeground(Color.WHITE);
+		sideTitle.setToolTipText("Games where your starters are on the field now: offense while their team has the ball, IDP/DEF while it doesn't");
+		top.add(left(sideTitle));
+		top.add(left(sideOfBall));
+		setSideOfBall(Collections.emptyList());
 		top.add(Box.createVerticalStrut(8));
 
 		JLabel feedTitle = new JLabel("Plays (after the delay)");
@@ -238,6 +250,52 @@ class SleeperScapePanel extends PluginPanel
 		{
 			label.setText(html(e));
 		}
+	}
+
+	/** Live: redrawn only when something changed. */
+	void setSideOfBall(List<SideOfBall> games)
+	{
+		StringBuilder key = new StringBuilder(String.valueOf(config.useEspn()));
+		for (SideOfBall g : games)
+		{
+			key.append('#').append(g.key());
+		}
+		if (key.toString().equals(sideOfBallKey))
+		{
+			return;
+		}
+		sideOfBallKey = key.toString();
+		StringBuilder sb = new StringBuilder("<html><body style='width:180px'>");
+		if (!config.useEspn())
+		{
+			sb.append(span(Colors.MUTED, "Turn on \"Use ESPN data\" to see who has the ball."));
+		}
+		else if (games.isEmpty())
+		{
+			sb.append(span(Colors.MUTED, "None of your starters are on the field right now."));
+		}
+		boolean firstGame = true;
+		for (SideOfBall g : games)
+		{
+			if (!firstGame)
+			{
+				sb.append("<br>");
+			}
+			firstGame = false;
+			sb.append(span(Colors.MUTED, g.game + " · " + g.teamWithBall + " ball"));
+			if (g.redZone)
+			{
+				sb.append(' ').append("<b>").append(span(Colors.OPPONENT, "RED ZONE")).append("</b>");
+			}
+			for (SideOfBall.Entry e : g.entries)
+			{
+				sb.append("<br>&nbsp;&nbsp;").append(span(Colors.MINE, e.name))
+					.append(span(Colors.MUTED, (e.defense ? " on D" : "") + " (" + String.join(", ", e.leagues) + ")"));
+			}
+		}
+		sideOfBall.setText(sb.append("</body></html>").toString());
+		revalidate();
+		repaint();
 	}
 
 	void clearFeed()

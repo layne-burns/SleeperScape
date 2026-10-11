@@ -45,6 +45,11 @@ public final class Engine
 
 		/** Current red-zone alerts, and those new since the last call. */
 		void redZone(List<RedZoneAlert> active, List<RedZoneAlert> entered);
+
+		/** Live games where my starters' side of the ball is on the field (with each ESPN update). */
+		default void sideOfBall(List<SideOfBall> games)
+		{
+		}
 	}
 
 	/** One poll cycle's results. Missing pieces (a failed request) are null. */
@@ -152,6 +157,10 @@ public final class Engine
 	private final Map<String, List<Espn.Play>> playsByGame = new HashMap<>();
 	private final Map<String, Long> lastMatchedSeq = new HashMap<>();
 	private final Map<String, RedZoneHold> redZoneHolds = new LinkedHashMap<>();
+	/** Last team seen with the ball, per live game (ESPN omits it between snaps). */
+	private final Map<String, String> possessionHold = new HashMap<>();
+	/** Which side was last projected to win, per league: 1 me, -1 my opponent. */
+	private final Map<String, Integer> projectedSide = new HashMap<>();
 	private final Map<String, Long> redZoneAnnounced = new HashMap<>();
 
 	public Engine(Settings settings, Listener listener)
@@ -298,9 +307,11 @@ public final class Engine
 		if (liveGames != null)
 		{
 			matchupEvents.addAll(finals(frame, previous == null));
+			matchupEvents.addAll(projectedLeadChanges(frame));
 			if (c.games != null)
 			{
 				updateRedZone(frame);
+				updateSideOfBall(frame);
 			}
 		}
 		pending.addAll(matchupEvents);
@@ -447,7 +458,7 @@ public final class Engine
 		i.tier = mineNow ? Tier.VERY_GOOD : Tier.VERY_BAD;
 		e.impacts.add(i);
 		e.message = (mineNow ? "You took the lead " : ctx.ownerName(lf.oppRosterId) + " took the lead ")
-			+ Format.score(lf.my) + "–" + Format.score(lf.opp);
+			+ Format.score(lf.my) + " - " + Format.score(lf.opp);
 		return e;
 	}
 
@@ -480,7 +491,7 @@ public final class Engine
 			PlayEvent.Impact i = new PlayEvent.Impact(ctx.id(), Owner.MINE, ctx.ownerName(ctx.myRosterId), true, margin);
 			i.tier = margin > 0.005 ? Tier.SCORED : margin < -0.005 ? Tier.SCORED_ON : Tier.CONFLICTED;
 			ev.impacts.add(i);
-			ev.message = (margin > 0.005 ? "W " : margin < -0.005 ? "L " : "T ") + Format.score(lf.my) + "–"
+			ev.message = (margin > 0.005 ? "W " : margin < -0.005 ? "L " : "T ") + Format.score(lf.my) + " - "
 				+ Format.score(lf.opp) + " vs " + ctx.ownerName(lf.oppRosterId);
 			out.add(ev);
 		}
@@ -558,6 +569,93 @@ public final class Engine
 			redZoneAnnounced.put(key, h.since);
 		}
 		listener.redZone(active, entered);
+	}
+
+	static final Set<String> DEFENSE = Set.of("DEF", "DL", "DE", "DT", "NT", "LB", "ILB", "OLB", "MLB", "EDGE", "DB",
+		"CB", "S", "SS", "FS");
+
+	/** Live games where my starters' side of the ball is on the field: offense with the ball, IDP/DEF without. */
+	private void updateSideOfBall(Frame frame)
+	{
+		Set<String> seen = new HashSet<>();
+		List<SideOfBall> out = new ArrayList<>();
+		for (Espn.Game g : frame.games.values())
+		{
+			if (!seen.add(g.id))
+			{
+				continue;
+			}
+			if (!g.live() || g.halftime)
+			{
+				possessionHold.remove(g.id);
+				continue;
+			}
+			if (g.possession != null)
+			{
+				possessionHold.put(g.id, g.possession);
+			}
+			String ball = possessionHold.get(g.id);
+			if (ball == null)
+			{
+				continue;
+			}
+			String defending = ball.equals(g.home) ? g.away : g.home;
+			SideOfBall side = new SideOfBall(g.label(), ball, redZoneHolds.containsKey(g.id));
+			Map<String, SideOfBall.Entry> entries = new LinkedHashMap<>();
+			for (Map.Entry<String, LeagueFrame> lfe : frame.leagues.entrySet())
+			{
+				if (!settings.leagueEnabled(lfe.getKey()))
+				{
+					continue;
+				}
+				String alias = settings.leagueAlias(lfe.getKey());
+				for (String pid : lfe.getValue().myStarters)
+				{
+					Sleeper.Player p = players.get(pid);
+					if (p == null || p.team == null || p.position == null)
+					{
+						continue;
+					}
+					boolean offense = p.team.equals(ball) && OFFENSE.contains(p.position);
+					boolean defense = p.team.equals(defending) && isDefender(p);
+					if (!offense && !defense)
+					{
+						continue;
+					}
+					SideOfBall.Entry entry = entries.computeIfAbsent(pid, k -> new SideOfBall.Entry(p.displayName(), defense));
+					if (!entry.leagues.contains(alias))
+					{
+						entry.leagues.add(alias);
+					}
+				}
+			}
+			if (!entries.isEmpty())
+			{
+				side.entries.addAll(entries.values());
+				out.add(side);
+			}
+		}
+		possessionHold.keySet().retainAll(seen);
+		listener.sideOfBall(out);
+	}
+
+	private static boolean isDefender(Sleeper.Player p)
+	{
+		if (DEFENSE.contains(p.position))
+		{
+			return true;
+		}
+		if (p.fantasy_positions != null)
+		{
+			for (String fp : p.fantasy_positions)
+			{
+				if (DEFENSE.contains(fp))
+				{
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	private void collectRedZone(Map<String, RedZoneAlert.Entry> entries, List<String> starters, String team,
@@ -838,7 +936,7 @@ public final class Engine
 		PlayEvent.Impact primary = primary(e);
 		Map<String, Double> scoring = scoringOf(primary);
 		boolean def = e.player != null && e.player.isTeamDefense();
-		e.categories = Classifier.categories(diff, def, primary.delta, settings.bigPlayYards());
+		e.categories = Classifier.categories(diff, def, primary.delta, settings.bigPlayYards(), scoring);
 		if (diff.isEmpty() && Math.abs(primary.delta) >= BIG_SWING_POINTS)
 		{
 			// No stat line yet (the stat feed lagging): don't let a likely touchdown pass as routine.
@@ -906,7 +1004,14 @@ public final class Engine
 			}
 			line.myLeft = startersLeft(lf.myStarters, frame.games);
 			line.oppLeft = lf.opp == null ? null : startersLeft(lf.oppStarters, frame.games);
-			line.winProbability = winProbability(ctx, lf, frame.games);
+			line.leagueName = ctx.name();
+			WinProbability outlook = outlook(ctx, lf, frame.games);
+			if (outlook != null)
+			{
+				line.winProbability = outlook.probability();
+				line.myProjected = outlook.myProjected();
+				line.oppProjected = outlook.oppProjected();
+			}
 			lines.add(line);
 		}
 		return new View(lines, 0, null);
@@ -937,7 +1042,8 @@ public final class Engine
 		return team == null ? null : games.get(team);
 	}
 
-	private Double winProbability(LeagueContext ctx, LeagueFrame lf, Map<String, Espn.Game> games)
+	/** Projected finals and win probability for a matchup, or null without games or projections. */
+	private WinProbability outlook(LeagueContext ctx, LeagueFrame lf, Map<String, Espn.Game> games)
 	{
 		if (lf.opp == null || games == null || projections.isEmpty() || ctx.scoring() == null)
 		{
@@ -946,7 +1052,52 @@ public final class Engine
 		WinProbability wp = new WinProbability(lf.my, lf.opp);
 		addProjected(wp, true, lf.myStarters, ctx, games);
 		addProjected(wp, false, lf.oppStarters, ctx, games);
-		return wp.probability();
+		return wp;
+	}
+
+	/**
+	 * The side projected to win flipped. Hysteresis: it only counts once the probability is past 52% the other
+	 * way, so a matchup hovering at 50% doesn't announce every poll. The first reading is silent.
+	 */
+	private List<PlayEvent> projectedLeadChanges(Frame frame)
+	{
+		List<PlayEvent> out = new ArrayList<>();
+		for (Map.Entry<String, LeagueFrame> e : frame.leagues.entrySet())
+		{
+			LeagueContext ctx = leagues.get(e.getKey());
+			LeagueFrame lf = e.getValue();
+			if (ctx == null || finalSeen.contains(e.getKey()))
+			{
+				continue;
+			}
+			WinProbability o = outlook(ctx, lf, frame.games);
+			if (o == null)
+			{
+				continue;
+			}
+			double p = o.probability();
+			int side = p >= 0.52 ? 1 : p <= 0.48 ? -1 : 0;
+			Integer before = projectedSide.get(ctx.id());
+			if (side == 0)
+			{
+				continue;
+			}
+			projectedSide.put(ctx.id(), side);
+			if (before == null || before == side)
+			{
+				continue;
+			}
+			PlayEvent ev = new PlayEvent(null, null, frame.t, false);
+			ev.categories = EnumSet.of(Category.PROJECTED_LEAD);
+			PlayEvent.Impact i = new PlayEvent.Impact(ctx.id(), Owner.MINE, ctx.ownerName(ctx.myRosterId), true,
+				o.myProjected() - o.oppProjected());
+			i.tier = side > 0 ? Tier.VERY_GOOD : Tier.VERY_BAD;
+			ev.impacts.add(i);
+			ev.message = (side > 0 ? "Now projected to win " : "Now projected to lose ") + Format.score(o.myProjected())
+				+ " - " + Format.score(o.oppProjected()) + " (" + Math.round(p * 100) + "%)";
+			out.add(ev);
+		}
+		return out;
 	}
 
 	private void addProjected(WinProbability wp, boolean mine, List<String> starters, LeagueContext ctx,
