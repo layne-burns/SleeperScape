@@ -57,6 +57,8 @@ public final class PlayEvent
 	/** Impacts that pass the filters, chosen at release. */
 	public List<Impact> visible = Collections.emptyList();
 	public Tier tier;
+	/** Points for me across the shown leagues: my players' points count +, my opponent's count -. */
+	public double netForMe;
 	public boolean released;
 
 	PlayEvent(String playerId, Sleeper.Player player, long observedAt, boolean offline)

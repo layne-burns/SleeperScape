@@ -186,8 +186,9 @@ public class EngineTest
 		assertEquals(Owner.MINE, e.visible.get(0).owner);
 		assertEquals(Tier.SCORED, e.visible.get(0).tier);
 		assertEquals(Tier.SCORED_ON, e.visible.get(1).tier);
-		// Scored in one league, scored on in the other: a shrug.
+		// Scored in one league, scored on in the other: a shrug, and nothing net for me.
 		assertEquals(Tier.CONFLICTED, e.tier);
+		assertEquals(0, e.netForMe, 1e-9);
 		assertEquals("rush TD +6 · 12 rush yd +1.2", e.detail());
 	}
 
@@ -577,5 +578,53 @@ public class EngineTest
 		c2.games.put("DAL", g2);
 		engine.ingest(c2);
 		assertEquals("PHI", sides.get(sides.size() - 1).get(0).teamWithBall);
+	}
+
+	@Test
+	public void netForMeCountsOnlyTheShownSides()
+	{
+		engine.ingest(cycle(1000, 10, 5));
+		Engine.Cycle c = cycle(11_000, 16, 5);
+		// In DYN, Hurts sits on my opponent's bench, so only my RD side is shown.
+		c.matchups.get(DYN).get(1).starters = Arrays.asList("someoneElse");
+		engine.ingest(c);
+		engine.tick(11_000 + Engine.DETAIL_GRACE_MS);
+		assertEquals(1, released.size());
+		assertEquals(6, released.get(0).netForMe, 1e-9);
+	}
+
+	@Test
+	public void startersCarryPointsAndGameStatus()
+	{
+		Engine.Cycle c = cycle(1000, 10, 5);
+		Espn.Game phi = espn("1", "in", "PHI", "DAL");
+		phi.period = 3;
+		phi.clockSeconds = 432;
+		Espn.Game kc = espn("2", "pre", "KC", "LV");
+		kc.kickoff = 123_000;
+		c.games = new HashMap<>();
+		c.games.put("PHI", phi);
+		c.games.put("DAL", phi);
+		c.games.put("KC", kc);
+		c.games.put("LV", kc);
+		engine.ingest(c);
+		View.Line line = engine.tick(1000).lines.get(0);
+		View.Starter hurts = line.myStarters.get(0);
+		assertEquals("Jalen Hurts", hurts.name);
+		assertEquals(10, hurts.points, 1e-9);
+		assertEquals(View.Starter.Status.PLAYING, hurts.status);
+		assertEquals("Q3 7:12", hurts.statusText);
+		View.Starter kelce = line.oppStarters.get(0);
+		assertEquals(View.Starter.Status.YET_TO_PLAY, kelce.status);
+		assertEquals(123_000, kelce.kickoff);
+
+		// A starter whose team has no game this week is on bye (done).
+		Map<String, Sleeper.Player> players = new HashMap<>();
+		players.put(HURTS, player(HURTS, "Jalen", "Hurts", "QB", "SF"));
+		players.put(KELCE, player(KELCE, "Travis", "Kelce", "TE", "KC"));
+		engine.setPlayers(players);
+		View.Starter bye = engine.tick(1000).lines.get(0).myStarters.get(0);
+		assertEquals(View.Starter.Status.DONE, bye.status);
+		assertEquals("Bye", bye.statusText);
 	}
 }

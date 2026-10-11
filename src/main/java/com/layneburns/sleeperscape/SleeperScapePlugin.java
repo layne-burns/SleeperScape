@@ -104,6 +104,8 @@ public class SleeperScapePlugin extends Plugin
 	private Recorder recorder;
 	private ScheduledExecutorService exec;
 	private Poller poller;
+	/** The frame the side panel's Starters tab last showed; -1 forces a redraw. */
+	private volatile long shownFrameAt = -1;
 
 	@Override
 	protected void startUp() throws Exception
@@ -186,6 +188,11 @@ public class SleeperScapePlugin extends Plugin
 			return;
 		}
 		SwingUtilities.invokeLater(panel::refreshConfig);
+		if (event.getKey().startsWith("league."))
+		{
+			// A league switched on/off or renamed: redraw the starters with the next view.
+			shownFrameAt = -1;
+		}
 		if (RESTART_KEYS.contains(event.getKey()))
 		{
 			// Rediscover leagues on the engine thread, after anything already queued there.
@@ -302,6 +309,12 @@ public class SleeperScapePlugin extends Plugin
 		public void view(View view)
 		{
 			state.view = view;
+			// The view is rebuilt every tick; the side panel only redraws when a new frame is shown.
+			if (view.frameAt != shownFrameAt)
+			{
+				shownFrameAt = view.frameAt;
+				SwingUtilities.invokeLater(() -> panel.setView(view));
+			}
 		}
 	}
 

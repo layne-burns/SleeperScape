@@ -127,7 +127,7 @@ public class ClassifierTest
 	@Test
 	public void espnScoreboardAndNameKeys()
 	{
-		String json = "{\"events\":[{\"id\":\"401\",\"competitions\":[{\"status\":{\"clock\":420,\"period\":3,"
+		String json = "{\"events\":[{\"id\":\"401\",\"date\":\"2026-10-11T17:00Z\",\"competitions\":[{\"status\":{\"clock\":420,\"period\":3,"
 			+ "\"type\":{\"state\":\"in\"}},\"competitors\":[{\"homeAway\":\"home\",\"team\":{\"id\":\"21\",\"abbreviation\":\"PHI\"}},"
 			+ "{\"homeAway\":\"away\",\"team\":{\"id\":\"28\",\"abbreviation\":\"WSH\"}}],"
 			+ "\"situation\":{\"possession\":\"28\",\"isRedZone\":true}}]}]}";
@@ -137,6 +137,8 @@ public class ClassifierTest
 		assertEquals("WAS", g.possession);
 		assertTrue(g.redZone);
 		assertEquals((900 + 420) / 3600.0, g.fractionLeft(), 1e-9);
+		assertEquals(java.time.OffsetDateTime.parse("2026-10-11T17:00Z").toInstant().toEpochMilli(), g.kickoff);
+		assertEquals("Q3 7:00", g.clockText());
 
 		Sleeper.Player p = new Sleeper.Player();
 		p.first_name = "Amon-Ra";

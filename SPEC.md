@@ -124,20 +124,35 @@ Each category has a sign and a significance. The tier is from **my** point of vi
 
 **Colours:** mine = pink (`#FF69B4`-ish), opponent = red. Points are shown signed.
 
-- **Side panel**:
-  - League list: toggle and alias.
-  - Delay: preset buttons **30 s / 60 s / 90 s / 120 s** that snap to that value, plus ±5 s buttons to fine-tune.
-  - Mute toggle, which pauses banner, chat, overhead text and reactions; the feed continues.
-  - **My side of the ball** (live, like the red zone; side panel only), **below the feed** (the feed matters
-    more) and capped at ~220 px, scrolling beyond: one card per live game where my starters are on the field
-    (offense while their team has the ball, IDP/DEF while it doesn't). Card header: the matchup left, `PHI ball`
-    right (or `PHI · RED ZONE` in red, with a red left edge on the card). Then one row per player: name (pink,
-    `DEF` prefix for defenders) left, leagues right. The last team seen with the ball is kept between snaps
-    (ESPN omits it); cleared at halftime.
-  - Full feed of *every* delta (filters applied), newest first. Each entry: time, headline (significant only) and player; then each league's side as `[ALIAS ±points] Owner` (`You` for mine, else the opponent's Sleeper name); then the breakdown.
-  - Row background, for every play: **green** when it only helps me, **red** when it only hurts me, **orange** when it does both (my player in one league, my opponent's in another). Significant plays get a stronger tint.
-  - Feed colours (also chat and banner): routine plays neutral; significant plays **green when good for me, red when bad for me** (so my opponent's QB throwing a pick is green), and **pink for my scoring plays** (TD, 2-pt, FG). Each `[league ±pts]` tag is coloured by how the play went for me in that league; the headline and name by how it went overall.
-  - Mixed plays (the same player is mine in one league and my opponent's in another): the stronger side wins; when both are equally strong, my net fantasy points across those leagues decide (`Tier.combine`), and an exact wash is neutral (and a shrug).
+- **Side panel** (redesigned 2026-10-11: one long column had become cluttered). A status strip, then tabs that
+  each get the full height (`MaterialTabGroup`; the last tab used is remembered in `panel.tab`):
+  - **Strip** (always): `Delay 30s` and a Mute toggle (pauses banner, chat, overhead text and reactions; the
+    feed continues); a status/error line appears under it only when there is one.
+  - **Plays**: filter `All · Big · Mine` (remembered, `panel.feedFilter`; default All), then the feed, max 300,
+    newest first. Each row is compact: time · headline (significant only) · player · **net points for me** on
+    the right (green +, red −; my players count +, my opponent's −). Significant plays add a one-line detail
+    (ESPN text or breakdown, trimmed with "…"). **Click a row** to expand it: each league's side as
+    `[ALIAS ±pts] Owner` (`You` for mine), the full ESPN text and the breakdown; click again to fold.
+    Row background: **green** helps me, **red** hurts me, **orange** both (my player in one league, my
+    opponent's in another); light for routine plays, stronger for significant ones.
+    Colours (also chat and banner): routine plays neutral; significant plays **green when good for me, red when
+    bad for me** (so my opponent's QB throwing a pick is green), **pink for my scoring plays** (TD, 2-pt, FG).
+    Mixed plays: the stronger side wins; equally strong → my net fantasy points decide (`Tier.combine`), an
+    exact wash is neutral (and a shrug).
+  - **Starters** (delayed, from the scoreboard's frame): one collapsible section per enabled league. Header:
+    the full name, then `87.4 - 79.1  62%` coloured by the scoreboard rule. Inside, collapsible groups
+    `PLAYING 2 v 1`, `YET TO PLAY 3 v 2` (open) and `DONE 4 v 6` (folded): my starters (pink), a `vs <opponent>`
+    divider, then theirs (red). Each row: name and position; on the right the game clock (`Q3 7:12`, `Half`,
+    `OT 4:05`), kickoff (`4:25 PM`, or `Mon 8:15 PM` on another day) with the projection, or `Final`/`Bye`, and
+    points. Without ESPN: one ungrouped list with points, and a hint.
+  - **Field** (live, like the red zone): the tab reads `Field 2` when two games have my starters on the field.
+    One card per game (offense while their team has the ball, IDP/DEF while it doesn't): matchup left,
+    `PHI ball` right, or `PHI · RED ZONE` in red with a red left edge; then a row per player (pink, `DEF`
+    prefix for defenders) with their leagues. The last team seen with the ball is kept between snaps (ESPN
+    omits it); cleared at halftime.
+  - **Setup**: delay presets **30/60/90/120 s** plus **−5 / 0 / +5**; then one card per league: tick + full
+    name, and a full-width **Short name** field (used in chat, feed tags and overhead text).
+  - Every collapsible remembers whether it is open (`panel.<key>.open`), using RuneLite's own section arrows.
 - **Scoreboard overlay** (delayed), compact small-font table, per enabled league:
   - Header: the league's **full name** (muted), starters left (`3v2 left`) on the right when known.
   - Then me and my opponent, by Sleeper username: `name | score | projected final | win %` (projection

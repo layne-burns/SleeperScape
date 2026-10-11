@@ -74,6 +74,8 @@ public final class Engine
 		int oppRosterId = -1;
 		List<String> myStarters = Collections.emptyList();
 		List<String> oppStarters = Collections.emptyList();
+		Map<String, Double> myPoints = Collections.emptyMap();
+		Map<String, Double> oppPoints = Collections.emptyMap();
 	}
 
 	static final class Frame
@@ -360,6 +362,7 @@ public final class Engine
 		}
 		lf.my = mine.total();
 		lf.myStarters = starters(mine);
+		lf.myPoints = mine.players_points == null ? Collections.emptyMap() : new HashMap<>(mine.players_points);
 		for (Sleeper.Matchup r : rows)
 		{
 			if (r != mine && mine.matchup_id != null && mine.matchup_id.equals(r.matchup_id))
@@ -367,6 +370,7 @@ public final class Engine
 				lf.opp = r.total();
 				lf.oppRosterId = r.roster_id;
 				lf.oppStarters = starters(r);
+				lf.oppPoints = r.players_points == null ? Collections.emptyMap() : new HashMap<>(r.players_points);
 			}
 		}
 		return lf;
@@ -838,6 +842,7 @@ public final class Engine
 		visible.sort((a, b) -> a.owner != b.owner ? a.owner.compareTo(b.owner) : Double.compare(Math.abs(b.delta), Math.abs(a.delta)));
 		e.visible = visible;
 		e.tier = Tier.combine(tiers, netForMe);
+		e.netForMe = netForMe;
 		if (!visible.isEmpty())
 		{
 			recent.addLast(e);
@@ -983,7 +988,7 @@ public final class Engine
 		if (frame == null)
 		{
 			Frame first = frames.peekFirst();
-			return new View(Collections.emptyList(), first == null ? 0 : Math.max(1, first.t - presentation), null);
+			return new View(Collections.emptyList(), first == null ? 0 : Math.max(1, first.t - presentation), null, 0);
 		}
 		List<View.Line> lines = new ArrayList<>();
 		for (LeagueContext ctx : leagues.values())
@@ -1003,6 +1008,8 @@ public final class Engine
 				line.opp = lf.opp;
 				line.oppOwner = ctx.ownerName(lf.oppRosterId);
 			}
+			line.myStarters = starterLines(lf.myStarters, lf.myPoints, ctx, frame.games);
+			line.oppStarters = starterLines(lf.oppStarters, lf.oppPoints, ctx, frame.games);
 			line.myLeft = startersLeft(lf.myStarters, frame.games);
 			line.oppLeft = lf.opp == null ? null : startersLeft(lf.oppStarters, frame.games);
 			line.leagueName = ctx.name();
@@ -1015,7 +1022,45 @@ public final class Engine
 			}
 			lines.add(line);
 		}
-		return new View(lines, 0, null);
+		return new View(lines, 0, null, frame.t);
+	}
+
+	/** Each starter with their points and where their game stands (from the same delayed frame). */
+	private List<View.Starter> starterLines(List<String> starters, Map<String, Double> points, LeagueContext ctx,
+		Map<String, Espn.Game> games)
+	{
+		List<View.Starter> out = new ArrayList<>();
+		for (String pid : starters)
+		{
+			Sleeper.Player p = players.get(pid);
+			View.Starter s = new View.Starter();
+			s.playerId = pid;
+			s.name = p == null ? pid : p.displayName();
+			s.position = p == null || p.position == null ? "" : p.position;
+			s.team = p == null ? null : p.team;
+			Double pts = points.get(pid);
+			s.points = pts == null ? 0 : pts;
+			Map<String, Double> proj = projections.get(pid);
+			s.projected = proj == null || ctx.scoring() == null ? null : Stats.points(proj, ctx.scoring());
+			if (games != null)
+			{
+				Espn.Game g = gameOf(pid, games);
+				if (g == null)
+				{
+					s.status = View.Starter.Status.DONE;
+					s.statusText = "Bye";
+				}
+				else
+				{
+					s.status = g.live() ? View.Starter.Status.PLAYING
+						: g.over() ? View.Starter.Status.DONE : View.Starter.Status.YET_TO_PLAY;
+					s.statusText = g.clockText();
+					s.kickoff = g.kickoff;
+				}
+			}
+			out.add(s);
+		}
+		return out;
 	}
 
 	private Integer startersLeft(List<String> starters, Map<String, Espn.Game> games)

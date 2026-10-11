@@ -4,6 +4,8 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -41,6 +43,8 @@ public final class Espn
 		/** ESPN keeps its last value through dead balls, so it only counts alongside {@link #possession}. */
 		public boolean redZone;
 		public boolean halftime;
+		/** Kickoff, epoch ms, or 0 if ESPN didn't say. */
+		public long kickoff;
 		/** "away-home" score, to notice a score while possession is missing. */
 		public String score = "";
 
@@ -77,6 +81,26 @@ public final class Espn
 		{
 			return away + " @ " + home;
 		}
+
+		/** "Q3 7:12", "Half", "OT 4:05" while live; "Final" when over; empty before kickoff. */
+		public String clockText()
+		{
+			if (over())
+			{
+				return "Final";
+			}
+			if (!live())
+			{
+				return "";
+			}
+			if (halftime)
+			{
+				return "Half";
+			}
+			int secs = (int) Math.max(0, Math.round(clockSeconds));
+			String clock = (secs / 60) + ":" + String.format("%02d", secs % 60);
+			return (period >= 5 ? "OT " : "Q" + Math.max(1, period) + " ") + clock;
+		}
 	}
 
 	public static final class Play
@@ -108,6 +132,7 @@ public final class Espn
 			JsonObject comp = obj(comps.get(0));
 			Game g = new Game();
 			g.id = str(event, "id");
+			g.kickoff = parseTime(str(event, "date"));
 			JsonObject status = obj(comp.get("status"));
 			if (status == null)
 			{
@@ -242,6 +267,23 @@ public final class Espn
 	public static String squash(String s)
 	{
 		return s.toLowerCase(Locale.ROOT).replace(" ", "").replace("'", "");
+	}
+
+	/** ESPN dates look like "2026-10-11T17:00Z" (seconds optional). */
+	private static long parseTime(String s)
+	{
+		if (s == null)
+		{
+			return 0;
+		}
+		try
+		{
+			return OffsetDateTime.parse(s).toInstant().toEpochMilli();
+		}
+		catch (DateTimeParseException e)
+		{
+			return 0;
+		}
 	}
 
 	private static long parseLong(String s)

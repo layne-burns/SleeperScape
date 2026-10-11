@@ -47,12 +47,13 @@ final class Colors
 		return e.significant() || e.isMatchupEvent() ? tier(tier) : NEUTRAL;
 	}
 
-	// Feed row backgrounds: how a play went for me, at a glance. Significant plays get the stronger tint.
-	private static final Color BG_GOOD = new Color(30, 52, 34);
+	// Feed row backgrounds: how a play went for me, at a glance. Routine plays get a light tint, significant
+	// plays the stronger one.
+	private static final Color BG_GOOD = new Color(31, 43, 33);
 	private static final Color BG_GOOD_STRONG = new Color(34, 78, 42);
-	private static final Color BG_BAD = new Color(56, 30, 30);
+	private static final Color BG_BAD = new Color(46, 31, 31);
 	private static final Color BG_BAD_STRONG = new Color(88, 34, 34);
-	private static final Color BG_MIXED = new Color(62, 46, 22);
+	private static final Color BG_MIXED = new Color(50, 41, 27);
 	private static final Color BG_MIXED_STRONG = new Color(96, 64, 20);
 
 	/**
