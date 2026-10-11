@@ -61,7 +61,7 @@ final class Text
 	 * Over my character with each reaction: the play, then the leagues it helps and hurts me in, e.g.
 	 * "TOUCHDOWN Hurts! Helps RD, hurts DYN1" or "Kelce 8 rec yd... Hurts DYN1". Routine plays are plain yellow;
 	 * significant ones coloured (green good, red bad, orange both); my scores wave and glow; being scored on
-	 * shakes and flashes red.
+	 * shakes in red.
 	 */
 	static Speech speech(PlayEvent e, long now, long length)
 	{

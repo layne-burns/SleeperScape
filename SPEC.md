@@ -152,7 +152,9 @@ Each category has a sign and a significance. The tier is from **my** point of vi
     exposes no way to set real overhead text's colour or effect (and reflection is forbidden).
   - Chat-effect rules: routine plays **yellow**; significant plays coloured (**green** good, **red** bad,
     **orange** both), with "Helps …" green and "hurts …" red; my scoring plays and a matchup win **wave2 +
-    glow** (pink/white/green); scored on or a matchup loss **shake + red flash**.
+    glow** (pink/white/green, a smooth shimmer); scored on or a matchup loss **shake in steady red**.
+  - **No flashing anywhere in the plugin** (user rule, 2026-10-11): nothing blinks on and off as a
+    notification.
 - **Avatar reactions**, by tier:
 
   | Tier | Reaction |

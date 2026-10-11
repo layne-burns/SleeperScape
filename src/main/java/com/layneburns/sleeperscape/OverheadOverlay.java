@@ -16,7 +16,7 @@ import net.runelite.client.ui.overlay.OverlayPosition;
 /**
  * Draws the reaction's text over my character, in the bold game font with the game's black shadow, and the
  * chat-style effects the client doesn't let plugins set on real overhead text: wave and glow for my scores,
- * shake and flash for being scored on. Only I see it.
+ * a red shake for being scored on. No flashing: nothing here blinks on and off. Only I see it.
  */
 class OverheadOverlay extends Overlay
 {
@@ -24,7 +24,6 @@ class OverheadOverlay extends Overlay
 	private static final int HEIGHT_OFFSET = 40;
 	private static final Color[] GLOW = {Colors.MINE, Color.WHITE, Colors.TEXT_GREEN, Color.WHITE};
 	private static final long GLOW_PERIOD_MS = 1600;
-	private static final long FLASH_MS = 250;
 
 	private final Client client;
 	private final Reactor reactor;
@@ -78,10 +77,10 @@ class OverheadOverlay extends Overlay
 						color = glow(t, i);
 						break;
 					case SCORED_ON:
-						// shake, fading as the reaction runs; red flashing.
+						// shake, fading as the reaction runs, in steady red.
 						double amp = 3.5 * Math.max(0.3, 1 - (double) t / length);
 						dy = (int) Math.round(Math.sin(t / 22.0 + i * 1.7) * amp);
-						color = (t / FLASH_MS) % 2 == 0 ? Colors.TEXT_RED : Colors.TEXT_RED_LIGHT;
+						color = Colors.TEXT_RED;
 						break;
 					default:
 						break;

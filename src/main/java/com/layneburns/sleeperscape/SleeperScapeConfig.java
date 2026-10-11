@@ -181,7 +181,7 @@ public interface SleeperScapeConfig extends Config
 	@ConfigItem(
 		keyName = "overheadText",
 		name = "Overhead text",
-		description = "Text over your character with each reaction: the play and the leagues it helps or hurts. Yellow for routine plays, green/red for significant ones, wave and glow for your scores, shake and flash when scored on",
+		description = "Text over your character with each reaction: the play and the leagues it helps or hurts. Yellow for routine plays, green/red for significant ones, wave and glow for your scores, a red shake when scored on",
 		section = displaySection,
 		position = 8
 	)

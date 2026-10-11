@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * Overhead text for one reaction, in coloured pieces, with an OSRS-style effect: routine plays plain yellow,
- * significant plays coloured, my scoring plays wave and glow, being scored on shakes and flashes red.
+ * significant plays coloured, my scoring plays wave and glow, being scored on shakes in red. Never flashes.
  */
 final class Speech
 {
@@ -18,7 +18,7 @@ final class Speech
 		SIGNIFICANT,
 		/** My scoring play or a matchup win: wave and a pink/white/green glow. */
 		SCORED,
-		/** Scored on, or a matchup loss: shake and a red flash. */
+		/** Scored on, or a matchup loss: a red shake (steady colour, no flashing). */
 		SCORED_ON
 	}
 
