@@ -4,6 +4,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Number and stat-label formatting shared by every surface. */
 public final class Format
@@ -78,6 +80,41 @@ public final class Format
 	{
 	}
 
+	// Milestone bonuses, by what comes between "bonus_" and the threshold: bonus_rush_yd_100 -> "100-yd rushing".
+	private static final Map<String, String> MILESTONES = new HashMap<>();
+
+	static
+	{
+		MILESTONES.put("rush_yd", "{n}-yd rushing");
+		MILESTONES.put("rec_yd", "{n}-yd receiving");
+		MILESTONES.put("pass_yd", "{n}-yd passing");
+		MILESTONES.put("rush_rec_yd", "{n} scrimmage yd");
+		MILESTONES.put("pass_cmp", "{n} completions");
+		MILESTONES.put("rush_att", "{n} carries");
+		MILESTONES.put("rec", "{n} catches");
+		MILESTONES.put("tkl", "{n} tackles");
+		MILESTONES.put("sack", "{n} sacks");
+		MILESTONES.put("def_fum_td", "{n}-yd fumble-return TD");
+		MILESTONES.put("def_int_td", "{n}-yd pick-six");
+		MILESTONES.put("pass_td", "{n}-yd TD pass");
+		MILESTONES.put("rush_td", "{n}-yd TD run");
+		MILESTONES.put("rec_td", "{n}-yd TD catch");
+		MILESTONES.put("fg", "{n}-yd FG");
+	}
+
+	/** "bonus_rush_rec_yd_100" -> "100 scrimmage yd", "bonus_tkl_10p" -> "10+ tackles". */
+	public static String milestone(String key)
+	{
+		Matcher m = Pattern.compile("bonus_(.*)_(\\d+)(p?)$").matcher(key);
+		if (!m.matches())
+		{
+			return key.replace('_', ' ');
+		}
+		String n = m.group(2) + (m.group(3).isEmpty() ? "" : "+");
+		String label = MILESTONES.get(m.group(1));
+		return label == null ? m.group(1).replace('_', ' ') + " " + n : label.replace("{n}", n);
+	}
+
 	/** "+7.2", "-0.48", "+6". */
 	public static String points(double pts)
 	{
@@ -112,6 +149,10 @@ public final class Format
 	public static String statLabel(String key, double amount)
 	{
 		String label = LABELS.get(key);
+		if (label == null && key.matches("bonus_.*_\\d+p?"))
+		{
+			return milestone(key);
+		}
 		if (label == null)
 		{
 			label = key.startsWith("bonus_") ? "bonus: " + key.substring(6).replace('_', ' ') : key.replace('_', ' ');

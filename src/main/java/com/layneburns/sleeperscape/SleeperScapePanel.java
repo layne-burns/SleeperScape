@@ -41,6 +41,8 @@ class SleeperScapePanel extends PluginPanel
 {
 	private static final int[] PRESETS = {30, 60, 90, 120};
 	private static final int MAX_FEED = 300;
+	/** My side of the ball never takes more than this; it scrolls beyond. */
+	private static final int SIDE_MAX_HEIGHT = 220;
 
 	private final SleeperScapeConfig config;
 	private final ConfigManager configManager;
@@ -51,7 +53,7 @@ class SleeperScapePanel extends PluginPanel
 	private final JCheckBox mute = new JCheckBox("Mute pop-ups, chat & reactions");
 	private final JPanel leaguesPanel = new JPanel();
 	private final JPanel feed = new JPanel();
-	private final JLabel sideOfBall = new JLabel();
+	private final JPanel sideCards = new JPanel();
 	private String sideOfBallKey;
 	private final Map<Long, JLabel> feedLabels = new HashMap<>();
 	private final SimpleDateFormat clock = new SimpleDateFormat("h:mm");
@@ -105,17 +107,6 @@ class SleeperScapePanel extends PluginPanel
 		top.add(left(leaguesPanel));
 		top.add(Box.createVerticalStrut(8));
 
-		JLabel sideTitle = new JLabel("My side of the ball (live)");
-		sideTitle.setForeground(Color.WHITE);
-		sideTitle.setToolTipText("Games where your starters are on the field now: offense while their team has the ball, IDP/DEF while it doesn't");
-		top.add(left(sideTitle));
-		top.add(left(sideOfBall));
-		setSideOfBall(Collections.emptyList());
-		top.add(Box.createVerticalStrut(8));
-
-		JLabel feedTitle = new JLabel("Plays (after the delay)");
-		feedTitle.setForeground(Color.WHITE);
-		top.add(left(feedTitle));
 
 		feed.setLayout(new BoxLayout(feed, BoxLayout.Y_AXIS));
 		feed.setBackground(ColorScheme.DARKER_GRAY_COLOR);
@@ -127,8 +118,48 @@ class SleeperScapePanel extends PluginPanel
 		scroll.setBorder(null);
 		scroll.getVerticalScrollBar().setUnitIncrement(16);
 
+		// Middle: the feed (the main thing) takes the space; my side of the ball sits under it, capped in height.
+		JLabel feedTitle = new JLabel("Plays (after the delay)");
+		feedTitle.setForeground(Color.WHITE);
+		feedTitle.setBorder(BorderFactory.createEmptyBorder(0, 0, 3, 0));
+
+		JLabel sideTitle = new JLabel("My side of the ball (live)");
+		sideTitle.setForeground(Color.WHITE);
+		sideTitle.setToolTipText("Games where your starters are on the field now: offense while their team has the ball, IDP/DEF while it doesn't");
+		sideTitle.setBorder(BorderFactory.createEmptyBorder(8, 0, 3, 0));
+		sideCards.setLayout(new BoxLayout(sideCards, BoxLayout.Y_AXIS));
+		sideCards.setOpaque(false);
+		JPanel sideHolder = new JPanel(new BorderLayout());
+		sideHolder.setOpaque(false);
+		sideHolder.add(sideCards, BorderLayout.NORTH);
+		JScrollPane sideScroll = new JScrollPane(sideHolder)
+		{
+			@Override
+			public Dimension getPreferredSize()
+			{
+				Dimension d = super.getPreferredSize();
+				return new Dimension(d.width, Math.min(d.height, SIDE_MAX_HEIGHT));
+			}
+		};
+		sideScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+		sideScroll.setBorder(null);
+		sideScroll.setOpaque(false);
+		sideScroll.getViewport().setOpaque(false);
+		sideScroll.getVerticalScrollBar().setUnitIncrement(16);
+		JPanel side = new JPanel(new BorderLayout());
+		side.setOpaque(false);
+		side.add(sideTitle, BorderLayout.NORTH);
+		side.add(sideScroll, BorderLayout.CENTER);
+
+		JPanel middle = new JPanel(new BorderLayout());
+		middle.setOpaque(false);
+		middle.add(feedTitle, BorderLayout.NORTH);
+		middle.add(scroll, BorderLayout.CENTER);
+		middle.add(side, BorderLayout.SOUTH);
+
 		add(top, BorderLayout.NORTH);
-		add(scroll, BorderLayout.CENTER);
+		add(middle, BorderLayout.CENTER);
+		setSideOfBall(Collections.emptyList());
 		refreshConfig();
 	}
 
@@ -252,7 +283,11 @@ class SleeperScapePanel extends PluginPanel
 		}
 	}
 
-	/** Live: redrawn only when something changed. */
+	/**
+	 * Live: one card per game where my starters are on the field. Header: the matchup, and who has the ball
+	 * (or RED ZONE, with a red edge on the card). Then one row per player: name, leagues, and a DEF tag for
+	 * defenders. Rebuilt only when something changed.
+	 */
 	void setSideOfBall(List<SideOfBall> games)
 	{
 		StringBuilder key = new StringBuilder(String.valueOf(config.useEspn()));
@@ -265,37 +300,72 @@ class SleeperScapePanel extends PluginPanel
 			return;
 		}
 		sideOfBallKey = key.toString();
-		StringBuilder sb = new StringBuilder("<html><body style='width:180px'>");
-		if (!config.useEspn())
+		sideCards.removeAll();
+		if (!config.useEspn() || games.isEmpty())
 		{
-			sb.append(span(Colors.MUTED, "Turn on \"Use ESPN data\" to see who has the ball."));
+			JLabel none = new JLabel(!config.useEspn()
+				? "<html>Turn on \"Use ESPN data\" to see who has the ball.</html>"
+				: "None of your starters are on the field.");
+			none.setForeground(Colors.MUTED);
+			sideCards.add(left(none));
 		}
-		else if (games.isEmpty())
-		{
-			sb.append(span(Colors.MUTED, "None of your starters are on the field right now."));
-		}
-		boolean firstGame = true;
+		boolean first = true;
 		for (SideOfBall g : games)
 		{
-			if (!firstGame)
+			if (!first)
 			{
-				sb.append("<br>");
+				sideCards.add(Box.createVerticalStrut(4));
 			}
-			firstGame = false;
-			sb.append(span(Colors.MUTED, g.game + " · " + g.teamWithBall + " ball"));
-			if (g.redZone)
-			{
-				sb.append(' ').append("<b>").append(span(Colors.OPPONENT, "RED ZONE")).append("</b>");
-			}
-			for (SideOfBall.Entry e : g.entries)
-			{
-				sb.append("<br>&nbsp;&nbsp;").append(span(Colors.MINE, e.name))
-					.append(span(Colors.MUTED, (e.defense ? " on D" : "") + " (" + String.join(", ", e.leagues) + ")"));
-			}
+			first = false;
+			sideCards.add(card(g));
 		}
-		sideOfBall.setText(sb.append("</body></html>").toString());
+		sideCards.revalidate();
+		sideCards.repaint();
 		revalidate();
-		repaint();
+	}
+
+	private JPanel card(SideOfBall g)
+	{
+		JPanel card = new JPanel(new BorderLayout(0, 2))
+		{
+			@Override
+			public Dimension getMaximumSize()
+			{
+				return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+			}
+		};
+		card.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		card.setAlignmentX(Component.LEFT_ALIGNMENT);
+		card.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createMatteBorder(0, 3, 0, 0, g.redZone ? Colors.OPPONENT : ColorScheme.DARKER_GRAY_COLOR),
+			BorderFactory.createEmptyBorder(4, 5, 4, 5)));
+
+		JPanel header = new JPanel(new BorderLayout(6, 0));
+		header.setOpaque(false);
+		JLabel game = new JLabel(g.game);
+		game.setForeground(Color.WHITE);
+		JLabel ball = new JLabel(g.redZone ? g.teamWithBall + " · RED ZONE" : g.teamWithBall + " ball");
+		ball.setForeground(g.redZone ? Colors.OPPONENT : Colors.MUTED);
+		header.add(game, BorderLayout.WEST);
+		header.add(ball, BorderLayout.EAST);
+		card.add(header, BorderLayout.NORTH);
+
+		JPanel rows = new JPanel(new GridLayout(0, 1, 0, 1));
+		rows.setOpaque(false);
+		for (SideOfBall.Entry e : g.entries)
+		{
+			JPanel row = new JPanel(new BorderLayout(6, 0));
+			row.setOpaque(false);
+			JLabel name = new JLabel(e.defense ? "DEF  " + e.name : e.name);
+			name.setForeground(Colors.MINE);
+			JLabel leagues = new JLabel(String.join(", ", e.leagues));
+			leagues.setForeground(Colors.MUTED);
+			row.add(name, BorderLayout.CENTER);
+			row.add(leagues, BorderLayout.EAST);
+			rows.add(row);
+		}
+		card.add(rows, BorderLayout.CENTER);
+		return card;
 	}
 
 	void clearFeed()
@@ -321,7 +391,7 @@ class SleeperScapePanel extends PluginPanel
 		sb.append(' ');
 		if (e.significant() || e.isMatchupEvent())
 		{
-			sb.append("<b>").append(span(Colors.play(e, e.tier), e.top().headline)).append("</b> ");
+			sb.append("<b>").append(span(Colors.play(e, e.tier), e.headline())).append("</b> ");
 		}
 		if (!e.isMatchupEvent())
 		{

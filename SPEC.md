@@ -91,8 +91,8 @@ Each category has a sign and a significance. The tier is from **my** point of vi
 | Offense | Pass/rush/rec TD (`pass_td`,`rush_td`,`rec_td`) | ✔ | SCORED |
 | | 2-pt conversion (`*_2pt`) | ✔ | SCORED |
 | | Return TD (`kr_td`,`pr_td`,`st_td`, fumble-recovery TD) | ✔ | SCORED |
-| | Big play ≥ `bigPlayYards` (default 20) rush/rec/pass. Level 3 confirms; at level 2 only when attempts/receptions grew by exactly 1 | ✔ | VERY_GOOD |
-| | Milestone bonus (`bonus_*` **only if the league scores that key**: the stat line carries bonus keys that tick on ordinary plays, which first showed as false MILESTONEs) | ✔ | VERY_GOOD |
+| | Big play ≥ `bigPlayYards` (default 20) rush/rec/pass: a single carry/catch/completion that long, a distance bucket (`rec_20_29`…), or a new longest gain (`rush_lng`/`rec_lng`/`pass_lng` grew to ≥ the threshold, which also works when two plays merge into one poll) | ✔ | VERY_GOOD |
+| | Milestone bonus: a `bonus_<stat>_<n>[p]` flag (e.g. `bonus_rush_rec_yd_100`, `bonus_tkl_10p`, `bonus_pass_cmp_25`) **that the league scores**, headlined by name (`100 SCRIMMAGE YD`, `10+ TACKLES`). `bonus_fd_*` / `bonus_rec_*` are per-play counters, never milestones | ✔ | VERY_GOOD |
 | | INT thrown (`pass_int`), pick-six (`pass_int_td`), fumble lost (`fum_lost`) | ✔ | VERY_BAD |
 | | Fumble not lost (`fum`), sacked (`pass_sack`), incompletion penalty | – | BAD |
 | | Yards, receptions, carries, first downs, completions | – | GOOD |
@@ -128,10 +128,12 @@ Each category has a sign and a significance. The tier is from **my** point of vi
   - League list: toggle and alias.
   - Delay: preset buttons **30 s / 60 s / 90 s / 120 s** that snap to that value, plus ±5 s buttons to fine-tune.
   - Mute toggle, which pauses banner, chat, overhead text and reactions; the feed continues.
-  - **My side of the ball** (live, like the red zone; side panel only): each live game where my starters are
-    on the field: offense (QB/RB/WR/TE/K) while their team has the ball, IDP/DEF while it doesn't. Shows
-    `DAL @ PHI · PHI ball`, a RED ZONE marker, and each player with their leagues (`on D` for defenders).
-    The last team seen with the ball is kept between snaps (ESPN omits it); cleared at halftime.
+  - **My side of the ball** (live, like the red zone; side panel only), **below the feed** (the feed matters
+    more) and capped at ~220 px, scrolling beyond: one card per live game where my starters are on the field
+    (offense while their team has the ball, IDP/DEF while it doesn't). Card header: the matchup left, `PHI ball`
+    right (or `PHI · RED ZONE` in red, with a red left edge on the card). Then one row per player: name (pink,
+    `DEF` prefix for defenders) left, leagues right. The last team seen with the ball is kept between snaps
+    (ESPN omits it); cleared at halftime.
   - Full feed of *every* delta (filters applied), newest first. Each entry: time, headline (significant only) and player; then each league's side as `[ALIAS ±points] Owner` (`You` for mine, else the opponent's Sleeper name); then the breakdown.
   - Row background, for every play: **green** when it only helps me, **red** when it only hurts me, **orange** when it does both (my player in one league, my opponent's in another). Significant plays get a stronger tint.
   - Feed colours (also chat and banner): routine plays neutral; significant plays **green when good for me, red when bad for me** (so my opponent's QB throwing a pick is green), and **pink for my scoring plays** (TD, 2-pt, FG). Each `[league ±pts]` tag is coloured by how the play went for me in that league; the headline and name by how it went overall.
@@ -147,6 +149,7 @@ Each category has a sign and a significance. The tier is from **my** point of vi
   - Usernames only, no team names (changed 2026-10-11: the team-name version was too large).
 - **Banner overlay** (significant plays): fades after `bannerSeconds` (5). Shows the play and each league's impact. Coalesces bursts.
 - **Chat**: game message for significant plays (`chatMode`: off / significant / all). Format: `[RD] Hurts 12-yd TD run +7.2`.
+  - Red zone (live, once per trip, `redZoneChat`): `[RED ZONE] CIN inside the 20 (CIN @ MIA): Chase Brown (UND, KCL)`, mine pink, my opponent's red.
 - **Overhead text** with every reaction (and every significant play) over the local player, for the reaction's length (6 s): the play, then the leagues it helps and hurts me in, e.g. `TOUCHDOWN Hurts! Helps RD, hurts DYN1`, `INTERCEPTION Winston... Helps UND, hurts KCL`, `Kelce 8 rec yd... Hurts DYN1`, `Took the lead in RD!`.
   - Drawn by an overlay (`OverheadOverlay`) in the bold game font with a black shadow, because RuneLite
     exposes no way to set real overhead text's colour or effect (and reflection is forbidden).
@@ -255,6 +258,8 @@ Computed from the delayed snapshot. It won't match the Sleeper app's number.
 
 - Scores in messages are joined with ` - `: the game font has no en dash (`85.0–84.6` showed as `85.084.6`).
 - Icon: hand-placed 16×16 pixel-art pink football (pointed tips, four stitches), since sidebar icons are drawn at 16 px.
+
+- Stats freshness (measured live): `api.sleeper.com/stats` (A) leads; `v1/stats` (B) lags 0–40 s (median 20 s), changes in ~30 s batches and skips intermediate versions. A is primary. One play can land as two A updates ~4 s apart (e.g. `rec_5_9` first, then `rec`/`rec_yd`); the explaining-snapshot rule handles that.
 
 ## Open items (resolved during phases)
 

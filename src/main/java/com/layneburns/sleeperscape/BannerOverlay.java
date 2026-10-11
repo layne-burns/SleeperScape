@@ -74,7 +74,7 @@ class BannerOverlay extends OverlayPanel
 			for (PlayEvent e : showing)
 			{
 				panelComponent.getChildren().add(LineComponent.builder()
-					.left(e.top().headline + " " + e.shortName()).leftColor(Colors.play(e, e.tier))
+					.left(e.headline() + " " + e.shortName()).leftColor(Colors.play(e, e.tier))
 					.right(Text.impactsPlain(e)).rightColor(Colors.MUTED)
 					.build());
 			}
@@ -116,7 +116,7 @@ class BannerOverlay extends OverlayPanel
 
 	private void drawPlay(PlayEvent e)
 	{
-		panelComponent.getChildren().add(TitleComponent.builder().text(e.top().headline).color(Colors.play(e, e.tier)).build());
+		panelComponent.getChildren().add(TitleComponent.builder().text(e.headline()).color(Colors.play(e, e.tier)).build());
 		if (!e.isMatchupEvent())
 		{
 			String pt = e.positionTeam();

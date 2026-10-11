@@ -936,7 +936,8 @@ public final class Engine
 		PlayEvent.Impact primary = primary(e);
 		Map<String, Double> scoring = scoringOf(primary);
 		boolean def = e.player != null && e.player.isTeamDefense();
-		e.categories = Classifier.categories(diff, def, primary.delta, settings.bigPlayYards(), scoring);
+		e.categories = Classifier.categories(diff, end, def, primary.delta, settings.bigPlayYards(), scoring);
+		e.milestone = Classifier.milestone(diff, scoring);
 		if (diff.isEmpty() && Math.abs(primary.delta) >= BIG_SWING_POINTS)
 		{
 			// No stat line yet (the stat feed lagging): don't let a likely touchdown pass as routine.

@@ -43,7 +43,7 @@ final class Text
 		sb.append("] ");
 		if (e.significant() || e.isMatchupEvent())
 		{
-			sb.append(ColorUtil.wrapWithColorTag(e.top().headline, Colors.play(e, e.tier))).append(' ');
+			sb.append(ColorUtil.wrapWithColorTag(e.headline(), Colors.play(e, e.tier))).append(' ');
 		}
 		if (!e.isMatchupEvent())
 		{
@@ -136,7 +136,7 @@ final class Text
 		String what;
 		if (e.significant())
 		{
-			what = e.top().headline + " " + e.shortName();
+			what = e.headline() + " " + e.shortName();
 		}
 		else if (!e.components.isEmpty())
 		{
@@ -149,10 +149,12 @@ final class Text
 		return what + (t == null || t == Tier.CONFLICTED ? "." : good ? "!" : "...");
 	}
 
+	/** "[RED ZONE] CIN inside the 20 (CIN @ MIA): Chase Brown (UND, KCL)", mine pink, my opponent's red. */
 	static String redZoneChat(RedZoneAlert a)
 	{
 		StringBuilder sb = new StringBuilder();
-		sb.append(ColorUtil.wrapWithColorTag("RED ZONE", Colors.OPPONENT)).append(' ').append(a.team).append(": ");
+		sb.append(ColorUtil.wrapWithColorTag("[RED ZONE]", Colors.OPPONENT)).append(' ')
+			.append(a.team).append(" inside the 20 (").append(a.game).append("): ");
 		boolean first = true;
 		for (RedZoneAlert.Entry entry : a.entries)
 		{

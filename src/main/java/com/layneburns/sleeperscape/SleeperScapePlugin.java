@@ -269,6 +269,7 @@ public class SleeperScapePlugin extends Plugin
 				for (RedZoneAlert a : entered)
 				{
 					String line = Text.redZoneChat(a);
+					log.debug("red zone chat: {}", a.key);
 					clientThread.invoke(() -> chat(line));
 				}
 			}

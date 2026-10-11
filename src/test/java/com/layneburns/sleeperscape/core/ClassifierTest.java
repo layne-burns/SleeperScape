@@ -25,7 +25,7 @@ public class ClassifierTest
 
 	private static EnumSet<Category> cats(Map<String, Double> d, boolean def)
 	{
-		return Classifier.categories(d, def, 1, 20, null);
+		return Classifier.categories(d, null, def, 1, 20, null);
 	}
 
 	@Test
@@ -39,7 +39,7 @@ public class ClassifierTest
 		Map<String, Double> bonus = new HashMap<>();
 		bonus.put("bonus_rush_yd_100", 3.0);
 		Map<String, Double> hundred = diff("bonus_rush_yd_100", 1, "rush_yd", 4, "rush_att", 1);
-		assertEquals(Category.MILESTONE, Classifier.categories(hundred, false, 3.4, 20, bonus).iterator().next());
+		assertEquals(Category.MILESTONE, Classifier.categories(hundred, null, false, 3.4, 20, bonus).iterator().next());
 		// A bonus key the league doesn't pay for is not a milestone (the stat line has these ticking).
 		assertFalse(cats(hundred, false).contains(Category.MILESTONE));
 		assertTrue(cats(diff("rec", 1, "rec_yd", 25), false).contains(Category.BIG_PLAY));
@@ -69,9 +69,9 @@ public class ClassifierTest
 	public void corrections()
 	{
 		assertEquals(Category.TD_OVERTURNED, cats(diff("rush_td", -1, "rush_yd", -3), false).iterator().next());
-		assertEquals(Category.CORRECTION, Classifier.categories(diff(), false, -2, 20, null).iterator().next());
+		assertEquals(Category.CORRECTION, Classifier.categories(diff(), null, false, -2, 20, null).iterator().next());
 		// Points up with no stats yet: the stat feed lagging, not a correction.
-		assertEquals(Category.PLAY, Classifier.categories(diff(), false, 2, 20, null).iterator().next());
+		assertEquals(Category.PLAY, Classifier.categories(diff(), null, false, 2, 20, null).iterator().next());
 	}
 
 	@Test
@@ -166,5 +166,33 @@ public class ClassifierTest
 		assertEquals(Tier.CONFLICTED, Tier.combine(pick, 0));
 		// The stronger side wins outright.
 		assertEquals(Tier.SCORED, Tier.combine(Arrays.asList(Tier.SCORED, Tier.BAD), -5));
+	}
+
+	@Test
+	public void milestonesAreNamed()
+	{
+		assertEquals("100 scrimmage yd", Format.milestone("bonus_rush_rec_yd_100"));
+		assertEquals("10+ tackles", Format.milestone("bonus_tkl_10p"));
+		assertEquals("25 completions", Format.milestone("bonus_pass_cmp_25"));
+		assertEquals("300-yd passing", Format.milestone("bonus_pass_yd_300"));
+		Map<String, Double> scoring = new HashMap<>();
+		scoring.put("bonus_rush_rec_yd_100", 2.0);
+		assertEquals("100 scrimmage yd", Classifier.milestone(diff("bonus_rush_rec_yd_100", 1, "rush_yd", 6), scoring));
+		// Counters like bonus_fd_rb tick every first down and are never milestones.
+		assertEquals(null, Classifier.milestone(diff("bonus_fd_rb", 1), scoring));
+		assertEquals("100 scrimmage yd +2", Classifier.components(diff("bonus_rush_rec_yd_100", 1), scoring).get(0).toString());
+	}
+
+	@Test
+	public void newLongestGainIsABigPlayEvenWhenPlaysMerge()
+	{
+		Map<String, Double> end = new HashMap<>();
+		end.put("rush_lng", 34.0);
+		// Two carries merged into one poll: the per-carry rule can't tell, the longest-gain key can.
+		Map<String, Double> d = diff("rush_att", 2, "rush_yd", 38, "rush_lng", 15);
+		assertTrue(Classifier.categories(d, end, false, 3.8, 20, null).contains(Category.BIG_PLAY));
+		end.put("rush_lng", 12.0);
+		assertFalse(Classifier.categories(diff("rush_att", 2, "rush_yd", 14, "rush_lng", 3), end, false, 1.4, 20, null)
+			.contains(Category.BIG_PLAY));
 	}
 }

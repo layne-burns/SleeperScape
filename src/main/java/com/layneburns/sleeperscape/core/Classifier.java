@@ -36,6 +36,7 @@ public final class Classifier
 	// Milestone bonuses carry their threshold last: bonus_rush_yd_100, bonus_pass_yd_300, bonus_pass_cmp_25 ...
 	private static final Pattern MILESTONE = Pattern.compile("bonus_.*_\\d+p?$");
 	// Distance buckets for long gains, where the stat feed reports them.
+	private static final List<String> LONGEST_KEYS = List.of("rush_lng", "rec_lng", "pass_lng");
 	private static final Set<String> BIG_PLAY_KEYS = Set.of("rec_20_29", "rec_30_39", "rec_40p", "rush_40p",
 		"pass_cmp_40p", "rush_20_29", "rush_30_39");
 
@@ -47,13 +48,14 @@ public final class Classifier
 	 * Every category the change holds, in priority order.
 	 *
 	 * @param diff         stat change (all keys, scored or not)
+	 * @param end          the stat line after the change, or null (for the "longest play" keys)
 	 * @param teamDefense  whether the player is a team DEF (whose int/fum_rec/sack are takeaways)
 	 * @param pointsDelta  the points the change was worth (any league), for an unexplained correction
 	 * @param bigPlayYards a single gain at least this long is a big play
 	 * @param scoring      the league's scoring, or null: a milestone counts only when the league scores it
 	 */
-	public static EnumSet<Category> categories(Map<String, Double> diff, boolean teamDefense, double pointsDelta,
-		int bigPlayYards, Map<String, Double> scoring)
+	public static EnumSet<Category> categories(Map<String, Double> diff, Map<String, Double> end, boolean teamDefense,
+		double pointsDelta, int bigPlayYards, Map<String, Double> scoring)
 	{
 		EnumSet<Category> cats = EnumSet.noneOf(Category.class);
 		for (Map.Entry<String, Double> e : diff.entrySet())
@@ -148,9 +150,10 @@ public final class Classifier
 				cats.add(Category.MILESTONE);
 			}
 		}
-		// Without distance buckets: one carry, catch or completion that gained bigPlayYards or more.
+		// One carry, catch or completion that gained bigPlayYards or more; or this play set a new longest gain
+		// (rush_lng / rec_lng / pass_lng) of at least that, which catches it even when two plays merged.
 		if (single(diff, "rush_att", "rush_yd", bigPlayYards) || single(diff, "rec", "rec_yd", bigPlayYards)
-			|| single(diff, "pass_cmp", "pass_yd", bigPlayYards))
+			|| single(diff, "pass_cmp", "pass_yd", bigPlayYards) || (!teamDefense && newLongest(diff, end, bigPlayYards)))
 		{
 			cats.add(Category.BIG_PLAY);
 		}
@@ -161,6 +164,40 @@ public final class Classifier
 			cats.add(diff.isEmpty() && pointsDelta < 0 ? Category.CORRECTION : Category.PLAY);
 		}
 		return cats;
+	}
+
+	private static boolean newLongest(Map<String, Double> diff, Map<String, Double> end, int threshold)
+	{
+		if (end == null)
+		{
+			return false;
+		}
+		for (String k : LONGEST_KEYS)
+		{
+			Double d = diff.get(k);
+			Double now = end.get(k);
+			if (d != null && d > 0 && now != null && now >= threshold)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * A readable name for the first milestone in the change that the league scores, e.g. "100 scrimmage yd",
+	 * or null.
+	 */
+	public static String milestone(Map<String, Double> diff, Map<String, Double> scoring)
+	{
+		for (Map.Entry<String, Double> e : diff.entrySet())
+		{
+			if (e.getValue() > 0 && MILESTONE.matcher(e.getKey()).matches() && scores(scoring, e.getKey()))
+			{
+				return Format.milestone(e.getKey());
+			}
+		}
+		return null;
 	}
 
 	private static boolean scores(Map<String, Double> scoring, String key)

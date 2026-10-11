@@ -52,6 +52,8 @@ public final class PlayEvent
 	public volatile String playText;
 	/** Text for matchup events. */
 	public String message;
+	/** Which milestone, when the play is one ("100 scrimmage yd"). */
+	public String milestone;
 	/** Impacts that pass the filters, chosen at release. */
 	public List<Impact> visible = Collections.emptyList();
 	public Tier tier;
@@ -68,6 +70,12 @@ public final class PlayEvent
 	public Category top()
 	{
 		return categories.iterator().next();
+	}
+
+	/** "TOUCHDOWN", or for a milestone which one: "100 SCRIMMAGE YD". */
+	public String headline()
+	{
+		return top() == Category.MILESTONE && milestone != null ? milestone.toUpperCase() : top().headline;
 	}
 
 	public boolean significant()
