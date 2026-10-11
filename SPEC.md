@@ -105,8 +105,8 @@ Each category has a sign and a significance. The tier is from **my** point of vi
 | | Yards-allowed tier change | – | BAD/GOOD |
 | IDP | Defensive TD (`idp_def_td`, INT/fumble return TD) | ✔ | SCORED |
 | | Sack, INT, forced fumble, fumble recovery, safety, blocked kick (`idp_sack`,`idp_int`,`idp_ff`,`idp_fum_rec`,`idp_safe`,`idp_blk_kick`) | ✔ | VERY_GOOD |
-| Special teams | Takeaway on a kick or punt (`def_st_ff`,`def_st_fum_rec` for team DEF; `st_ff`,`st_fum_rec` for players) | ✔ | VERY_GOOD |
 | | Tackle solo/assist, TFL, QB hit, pass defended (`idp_tkl_*`,`idp_qb_hit`,`idp_pass_def`) | – | GOOD |
+| Special teams | Takeaway on a kick or punt (`def_st_ff`,`def_st_fum_rec` for team DEF; `st_ff`,`st_fum_rec` for players) | ✔ | VERY_GOOD |
 | Matchup | Lead change (I take the lead / lose it) | ✔ | VERY_GOOD / VERY_BAD |
 | | Matchup final (win / loss) | ✔ | SCORED / SCORED_ON |
 | Other | Correction (no stat explanation); "TD overturned" | TD only | by sign |
