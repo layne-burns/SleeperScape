@@ -126,7 +126,8 @@ Each category has a sign and a significance. The tier is from **my** point of vi
   - League list: toggle and alias.
   - Delay: preset buttons **30 s / 60 s / 90 s / 120 s** that snap to that value, plus ±5 s buttons to fine-tune.
   - Mute toggle, which pauses banner, chat, overhead text and reactions; the feed continues.
-  - Full feed of *every* delta (filters applied), newest first: time, `[ALIAS]`, player in owner colour, text, ±points.
+  - Full feed of *every* delta (filters applied), newest first: time, `[ALIAS ±points]`, headline (significant only), player, text.
+  - Feed colours: non-significant plays neutral; significant plays green when mine, red when my opponent's, and **pink for my scoring plays** (TD, 2-pt, FG). Lead changes and finals: pink for a win, green/red for taking/losing the lead.
 - **Scoreboard overlay** (delayed), compact (small font, ~150 px), three lines per enabled league:
   - `RD          62% · 3v2 left` (alias, then win % and starters left, each only when known; both need ESPN)
   - `LBBurnsy   87.4` (my username in pink; my score **green while I lead**, neutral otherwise)

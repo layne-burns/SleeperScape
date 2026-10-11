@@ -1,6 +1,7 @@
 package com.layneburns.sleeperscape;
 
 import com.layneburns.sleeperscape.core.Owner;
+import com.layneburns.sleeperscape.core.PlayEvent;
 import com.layneburns.sleeperscape.core.Tier;
 import java.awt.Color;
 
@@ -31,6 +32,32 @@ final class Colors
 			return NEUTRAL;
 		}
 		return tier.positive() ? MINE : OPPONENT;
+	}
+
+	/**
+	 * Side-panel feed colour for one side of a play: neutral unless the play is significant; then pink for my
+	 * scoring play (TD, 2-pt, FG), green for my other significant plays, red for my opponent's. Matchup events
+	 * (lead change, final) follow how they went for me.
+	 */
+	static Color feed(PlayEvent e, Owner owner)
+	{
+		if (e.isMatchupEvent())
+		{
+			if (e.tier == Tier.SCORED)
+			{
+				return MINE;
+			}
+			return e.tier == null || e.tier == Tier.CONFLICTED ? NEUTRAL : e.tier.positive() ? WINNING : OPPONENT;
+		}
+		if (!e.significant())
+		{
+			return NEUTRAL;
+		}
+		if (owner != Owner.MINE)
+		{
+			return OPPONENT;
+		}
+		return e.top().fixedTier == Tier.SCORED ? MINE : WINNING;
 	}
 
 	static String hex(Color c)
