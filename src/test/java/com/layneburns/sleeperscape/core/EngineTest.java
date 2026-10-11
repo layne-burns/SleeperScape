@@ -1,0 +1,321 @@
+package com.layneburns.sleeperscape.core;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import org.junit.Before;
+import org.junit.Test;
+
+/** Engine behaviour on hand-built polls: two leagues, me (roster 1) against roster 2. */
+public class EngineTest
+{
+	private static final String RD = "L1";
+	private static final String DYN = "L2";
+	private static final String HURTS = "6904";
+	private static final String KELCE = "1466";
+
+	private final List<PlayEvent> released = new ArrayList<>();
+	private final List<RedZoneAlert> entered = new ArrayList<>();
+	private int delay;
+	private boolean startersOnly = true;
+	private Engine engine;
+	private Map<String, Map<String, Double>> stats;
+
+	@Before
+	public void setUp()
+	{
+		engine = new Engine(new Engine.Settings()
+		{
+			public int delaySeconds()
+			{
+				return delay;
+			}
+
+			public boolean startersOnly()
+			{
+				return startersOnly;
+			}
+
+			public boolean includeOpponent()
+			{
+				return true;
+			}
+
+			public int bigPlayYards()
+			{
+				return 20;
+			}
+
+			public boolean leagueEnabled(String id)
+			{
+				return true;
+			}
+
+			public String leagueAlias(String id)
+			{
+				return id.equals(RD) ? "RD" : "DYN";
+			}
+		}, new Engine.Listener()
+		{
+			public void released(PlayEvent e)
+			{
+				released.add(e);
+			}
+
+			public void updated(PlayEvent e)
+			{
+			}
+
+			public void redZone(List<RedZoneAlert> active, List<RedZoneAlert> enteredNow)
+			{
+				entered.addAll(enteredNow);
+			}
+		});
+		Map<String, Sleeper.Player> players = new HashMap<>();
+		players.put(HURTS, player(HURTS, "Jalen", "Hurts", "QB", "PHI"));
+		players.put(KELCE, player(KELCE, "Travis", "Kelce", "TE", "KC"));
+		engine.setPlayers(players);
+		Map<String, Double> scoring = new HashMap<>();
+		scoring.put("pass_yd", 0.04);
+		scoring.put("pass_td", 4.0);
+		scoring.put("rush_yd", 0.1);
+		scoring.put("rush_td", 6.0);
+		scoring.put("rec", 1.0);
+		scoring.put("rec_yd", 0.1);
+		scoring.put("pass_int", -2.0);
+		engine.setLeagues(Arrays.asList(league(RD, scoring), league(DYN, scoring)));
+		stats = new HashMap<>();
+	}
+
+	private static Sleeper.Player player(String id, String first, String last, String pos, String team)
+	{
+		Sleeper.Player p = new Sleeper.Player();
+		p.player_id = id;
+		p.first_name = first;
+		p.last_name = last;
+		p.position = pos;
+		p.team = team;
+		return p;
+	}
+
+	private static LeagueContext league(String id, Map<String, Double> scoring)
+	{
+		Sleeper.League l = new Sleeper.League();
+		l.league_id = id;
+		l.name = id;
+		l.scoring_settings = scoring;
+		Sleeper.Roster me = new Sleeper.Roster();
+		me.roster_id = 1;
+		me.owner_id = "me";
+		Sleeper.Roster them = new Sleeper.Roster();
+		them.roster_id = 2;
+		them.owner_id = "them";
+		return new LeagueContext(l, Arrays.asList(me, them), new ArrayList<>(), "me");
+	}
+
+	private static Sleeper.Matchup row(int roster, String starter, double pts, double total)
+	{
+		Sleeper.Matchup m = new Sleeper.Matchup();
+		m.roster_id = roster;
+		m.matchup_id = 1;
+		m.points = total;
+		m.starters = Arrays.asList(starter);
+		m.players_points = new HashMap<>();
+		m.players_points.put(starter, pts);
+		return m;
+	}
+
+	/** RD: Hurts is mine, Kelce theirs. DYN: Hurts is theirs, Kelce mine. */
+	private Engine.Cycle cycle(long t, double hurts, double kelce)
+	{
+		Engine.Cycle c = new Engine.Cycle(t);
+		c.matchups.put(RD, Arrays.asList(row(1, HURTS, hurts, hurts), row(2, KELCE, kelce, kelce)));
+		c.matchups.put(DYN, Arrays.asList(row(1, KELCE, kelce, kelce), row(2, HURTS, hurts, hurts)));
+		Map<String, Map<String, Double>> copy = new HashMap<>();
+		stats.forEach((k, v) -> copy.put(k, new HashMap<>(v)));
+		c.stats = copy;
+		return c;
+	}
+
+	private void stat(String pid, String key, double value)
+	{
+		stats.computeIfAbsent(pid, k -> new HashMap<>()).put(key, value);
+	}
+
+	@Test
+	public void firstPollIsASilentBaseline()
+	{
+		engine.ingest(cycle(1000, 10, 5));
+		engine.tick(100_000);
+		assertTrue(released.isEmpty());
+	}
+
+	@Test
+	public void touchdownIsOneEventAcrossLeaguesWithStatBreakdownAndMirroredTiers()
+	{
+		stat(HURTS, "rush_yd", 20);
+		engine.ingest(cycle(1000, 10, 5));
+		stat(HURTS, "rush_yd", 32);
+		stat(HURTS, "rush_td", 1);
+		engine.ingest(cycle(11_000, 17.2, 5));
+		engine.tick(11_000);
+
+		assertEquals(1, released.size());
+		PlayEvent e = released.get(0);
+		assertEquals(Category.TOUCHDOWN, e.top());
+		assertTrue(e.significant());
+		assertEquals(2, e.visible.size());
+		// Mine first.
+		assertEquals(Owner.MINE, e.visible.get(0).owner);
+		assertEquals(Tier.SCORED, e.visible.get(0).tier);
+		assertEquals(Tier.SCORED_ON, e.visible.get(1).tier);
+		// Scored in one league, scored on in the other: a shrug.
+		assertEquals(Tier.CONFLICTED, e.tier);
+		assertEquals("rush TD +6 · 12 rush yd +1.2", e.detail());
+	}
+
+	@Test
+	public void delayHoldsPlaysAndScores()
+	{
+		delay = 60;
+		engine.ingest(cycle(1000, 10, 5));
+		engine.ingest(cycle(11_000, 12, 5));
+		View v = engine.tick(30_000);
+		assertTrue(released.isEmpty());
+		assertTrue(v.lines.isEmpty());
+		assertTrue(v.bufferingMs > 0);
+
+		v = engine.tick(62_000);
+		assertTrue(released.isEmpty());
+		assertEquals(10, v.lines.get(0).my, 1e-9);
+
+		v = engine.tick(71_000);
+		assertEquals(1, released.size());
+		assertEquals(12, v.lines.get(0).my, 1e-9);
+	}
+
+	@Test
+	public void reversalInsideTheDelayIsNeverShown()
+	{
+		delay = 60;
+		engine.ingest(cycle(1000, 10, 5));
+		engine.ingest(cycle(11_000, 16, 5));
+		engine.ingest(cycle(21_000, 10, 5));
+		engine.tick(200_000);
+		assertTrue(released.isEmpty());
+	}
+
+	@Test
+	public void leagueReportingAPollLateJoinsTheSameEvent()
+	{
+		engine.ingest(cycle(1000, 10, 5));
+		Engine.Cycle c = cycle(11_000, 16, 5);
+		c.matchups.remove(DYN);
+		engine.ingest(c);
+		engine.ingest(cycle(21_000, 16, 5));
+		engine.tick(21_000);
+		assertEquals(1, released.size());
+		assertEquals(2, released.get(0).visible.size());
+	}
+
+	@Test
+	public void benchPlaysAreFilteredWhenStartersOnly()
+	{
+		engine.ingest(cycle(1000, 10, 5));
+		Engine.Cycle c = cycle(11_000, 10, 5);
+		Sleeper.Matchup mine = c.matchups.get(RD).get(0);
+		mine.players_points.put("bench1", 3.0);
+		engine.ingest(c);
+		Engine.Cycle c2 = cycle(21_000, 10, 5);
+		c2.matchups.get(RD).get(0).players_points.put("bench1", 9.0);
+		engine.ingest(c2);
+		engine.tick(30_000);
+		assertTrue(released.isEmpty());
+	}
+
+	@Test
+	public void leadChangeIsAnnounced()
+	{
+		engine.ingest(cycle(1000, 10, 12));
+		engine.ingest(cycle(11_000, 14, 12));
+		engine.tick(11_000);
+		boolean lead = false;
+		for (PlayEvent e : released)
+		{
+			if (e.top() == Category.LEAD_CHANGE && RD.equals(e.visible.get(0).leagueId))
+			{
+				lead = true;
+				assertEquals(Tier.VERY_GOOD, e.tier);
+			}
+		}
+		assertTrue(lead);
+	}
+
+	@Test
+	public void redZoneIsLiveAndListsMineAndTheirs()
+	{
+		delay = 120;
+		engine.ingest(cycle(1000, 10, 5));
+		Engine.Cycle c = cycle(11_000, 10, 5);
+		Espn.Game g = new Espn.Game();
+		g.id = "401";
+		g.state = "in";
+		g.home = "PHI";
+		g.away = "DAL";
+		g.possession = "PHI";
+		g.redZone = true;
+		c.games = new HashMap<>();
+		c.games.put("PHI", g);
+		c.games.put("DAL", g);
+		engine.ingest(c);
+		assertEquals(1, entered.size());
+		RedZoneAlert a = entered.get(0);
+		assertEquals("PHI", a.team);
+		assertEquals(2, a.entries.size());
+		assertTrue(a.entries.get(0).mine);
+		assertEquals(Arrays.asList("RD"), a.entries.get(0).leagues);
+		assertEquals(Arrays.asList("DYN"), a.entries.get(1).leagues);
+		// Still in the red zone next poll: not announced again.
+		engine.ingest(cycle(21_000, 10, 5));
+		Engine.Cycle c3 = cycle(31_000, 10, 5);
+		c3.games = c.games;
+		engine.ingest(c3);
+		assertEquals(1, entered.size());
+	}
+
+	@Test
+	public void winProbabilityNeedsGamesAndProjections()
+	{
+		engine.ingest(cycle(1000, 10, 5));
+		assertNull(engine.tick(1000).lines.get(0).winProbability);
+
+		Map<String, Map<String, Double>> proj = new HashMap<>();
+		Map<String, Double> p = new HashMap<>();
+		p.put("pass_yd", 250.0);
+		p.put("pass_td", 2.0);
+		proj.put(HURTS, p);
+		proj.put(KELCE, p);
+		engine.setProjections(proj);
+		Engine.Cycle c = cycle(11_000, 10, 5);
+		Espn.Game phi = new Espn.Game();
+		phi.id = "1";
+		phi.state = "post";
+		Espn.Game kc = new Espn.Game();
+		kc.id = "2";
+		kc.state = "post";
+		c.games = new HashMap<>();
+		c.games.put("PHI", phi);
+		c.games.put("KC", kc);
+		engine.ingest(c);
+		View v = engine.tick(11_000);
+		Double wp = v.lines.get(0).winProbability;
+		assertNotNull(wp);
+		assertEquals(1.0, wp, 1e-9);
+	}
+}
