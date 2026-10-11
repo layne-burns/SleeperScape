@@ -58,10 +58,12 @@ public final class Poller
 	private static final long RETRY_INIT_SECONDS = 60;
 	private static final long PROJECTIONS_EVERY_MS = 10 * 60_000L;
 	private static final long ROSTERS_EVERY_MS = 30 * 60_000L;
+	// Polled every cycle, so the lean one goes first: v1 is ~270 KB of stats keyed by player, the others
+	// ~1.3 MB arrays with metadata (all confirmed live on 2026-10-11).
 	private static final String[] STAT_URLS = {
+		"https://api.sleeper.app/v1/stats/nfl/%3$s/%1$s/%2$d",
 		"https://api.sleeper.com/stats/nfl/%s/%d?season_type=%s",
 		"https://api.sleeper.app/stats/nfl/%s/%d?season_type=%s",
-		"https://api.sleeper.app/v1/stats/nfl/%3$s/%1$s/%2$d",
 	};
 	private static final String[] PROJECTION_URLS = {
 		"https://api.sleeper.com/projections/nfl/%s/%d?season_type=%s",

@@ -11,10 +11,8 @@ public final class View
 		public String leagueId;
 		public String alias;
 		public String myOwner;
-		public String myTeam;
 		public double my;
 		public String oppOwner;
-		public String oppTeam;
 		public Double opp;
 		/** 0..1, or null when it can't be estimated (no ESPN clock or no projections yet). */
 		public Double winProbability;

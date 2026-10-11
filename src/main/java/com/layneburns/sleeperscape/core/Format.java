@@ -52,6 +52,11 @@ public final class Format
 		LABELS.put("st_td", "ST TD");
 		LABELS.put("kr_td", "kick-return TD");
 		LABELS.put("pr_td", "punt-return TD");
+		LABELS.put("def_st_ff", "ST forced fumble");
+		LABELS.put("def_st_fum_rec", "ST fumble recovery");
+		LABELS.put("st_ff", "ST forced fumble");
+		LABELS.put("st_fum_rec", "ST fumble recovery");
+		LABELS.put("def_2pt", "DEF 2-pt return");
 		LABELS.put("kr_yd", "{n} KR yd");
 		LABELS.put("pr_yd", "{n} PR yd");
 		LABELS.put("idp_tkl", "tackle");

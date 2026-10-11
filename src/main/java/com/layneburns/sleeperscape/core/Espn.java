@@ -33,9 +33,16 @@ public final class Espn
 		public double clockSeconds;
 		public String home;
 		public String away;
-		/** Sleeper abbreviation of the team with the ball, if ESPN says. */
+		/**
+		 * Sleeper abbreviation of the team with the ball. ESPN only sends it while a snap is pending: it is
+		 * missing at halftime, at dead balls and right after a score.
+		 */
 		public String possession;
+		/** ESPN keeps its last value through dead balls, so it only counts alongside {@link #possession}. */
 		public boolean redZone;
+		public boolean halftime;
+		/** "away-home" score, to notice a score while possession is missing. */
+		public String score = "";
 
 		public boolean live()
 		{
@@ -115,8 +122,11 @@ public final class Espn
 				{
 					g.state = str(type, "state").toLowerCase(Locale.ROOT);
 				}
+				g.halftime = type != null && "STATUS_HALFTIME".equals(str(type, "name"));
 			}
 			Map<String, String> abbrById = new HashMap<>();
+			String homeScore = null;
+			String awayScore = null;
 			for (JsonElement c : arr(comp, "competitors"))
 			{
 				JsonObject competitor = obj(c);
@@ -132,15 +142,19 @@ public final class Espn
 					teamId = str(competitor, "id");
 				}
 				abbrById.put(teamId, abbr);
+				String points = str(competitor, "score");
 				if ("home".equals(str(competitor, "homeAway")))
 				{
 					g.home = abbr;
+					homeScore = points;
 				}
 				else
 				{
 					g.away = abbr;
+					awayScore = points;
 				}
 			}
+			g.score = awayScore + "-" + homeScore;
 			JsonObject situation = obj(comp.get("situation"));
 			if (situation != null && g.live())
 			{

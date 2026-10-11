@@ -4,12 +4,14 @@ import com.layneburns.sleeperscape.core.Owner;
 import com.layneburns.sleeperscape.core.Tier;
 import java.awt.Color;
 
-/** Pink is mine (the top colour across these plugins); red is my opponent's, and bad. */
+/** Pink is mine (the top colour across these plugins); red is my opponent's, and bad; green is me winning. */
 final class Colors
 {
 	static final Color MINE = new Color(255, 105, 180);
 	static final Color OPPONENT = new Color(232, 52, 52);
 	static final Color NEUTRAL = new Color(220, 220, 220);
+	/** My score while I lead. */
+	static final Color WINNING = new Color(80, 220, 100);
 	static final Color MUTED = new Color(150, 150, 150);
 
 	private Colors()

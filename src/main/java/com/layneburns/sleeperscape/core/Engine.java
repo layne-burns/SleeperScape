@@ -85,6 +85,16 @@ public final class Engine
 		}
 	}
 
+	/** A game whose team with the ball is inside the 20. */
+	private static final class RedZoneHold
+	{
+		String team;
+		String label;
+		String score;
+		long since;
+		long lastWithPossession;
+	}
+
 	private static final class StatSnap
 	{
 		final long t;
@@ -103,6 +113,15 @@ public final class Engine
 	static final long MERGE_MS = 30_000;
 	/** Frames and stat history older than the longest delay plus this are dropped. */
 	static final long KEEP_MS = 12 * 60_000;
+	/** Keep a red-zone alert this long while ESPN omits possession (between snaps), unless the score changes. */
+	static final long REDZONE_HOLD_MS = 90_000;
+	/** The same team's red-zone trip is announced in chat once, not again for this long. */
+	static final long REDZONE_REANNOUNCE_MS = 180_000;
+	/**
+	 * The stat feed and the scores don't always land in the same poll. A play whose points no stat snapshot
+	 * explains yet waits this long (from when it was seen) for the stats, even with a shorter delay.
+	 */
+	static final long DETAIL_GRACE_MS = 15_000;
 	static final Set<String> OFFENSE = Set.of("QB", "RB", "WR", "TE", "K", "FB");
 
 	private final Settings settings;
@@ -120,6 +139,7 @@ public final class Engine
 	private final Map<String, ArrayDeque<StatSnap>> statHistory = new HashMap<>();
 	private final Map<String, Map<String, Double>> latestStats = new HashMap<>();
 	private final Map<String, Map<String, Double>> statCursor = new HashMap<>();
+	private final Map<String, Long> statCursorAt = new HashMap<>();
 	private boolean statsBaselined;
 
 	private final List<PlayEvent> pending = new ArrayList<>();
@@ -129,7 +149,8 @@ public final class Engine
 
 	private final Map<String, List<Espn.Play>> playsByGame = new HashMap<>();
 	private final Map<String, Long> lastMatchedSeq = new HashMap<>();
-	private final Set<String> redZoneActive = new HashSet<>();
+	private final Map<String, RedZoneHold> redZoneHolds = new LinkedHashMap<>();
+	private final Map<String, Long> redZoneAnnounced = new HashMap<>();
 
 	public Engine(Settings settings, Listener listener)
 	{
@@ -293,6 +314,7 @@ public final class Engine
 			if (!statsBaselined)
 			{
 				statCursor.put(pid, s);
+				statCursorAt.put(pid, t);
 			}
 			if (!Objects.equals(latestStats.get(pid), s))
 			{
@@ -467,15 +489,42 @@ public final class Engine
 
 	private void updateRedZone(Frame frame)
 	{
-		Map<String, RedZoneAlert> alerts = new LinkedHashMap<>();
+		long t = frame.t;
 		Set<String> seenGames = new HashSet<>();
 		for (Espn.Game g : frame.games.values())
 		{
-			if (!g.redZone || g.possession == null || !seenGames.add(g.id))
+			if (!seenGames.add(g.id))
 			{
 				continue;
 			}
-			String key = g.id + ":" + g.possession;
+			RedZoneHold held = redZoneHolds.get(g.id);
+			if (!g.live() || g.halftime || !g.redZone)
+			{
+				redZoneHolds.remove(g.id);
+			}
+			else if (g.possession != null)
+			{
+				RedZoneHold h = new RedZoneHold();
+				h.team = g.possession;
+				h.label = g.label();
+				h.score = g.score;
+				h.lastWithPossession = t;
+				h.since = held != null && held.team.equals(g.possession) ? held.since : t;
+				redZoneHolds.put(g.id, h);
+			}
+			else if (held != null && (!held.score.equals(g.score) || t - held.lastWithPossession > REDZONE_HOLD_MS))
+			{
+				// ESPN drops possession between snaps; hold the alert through that, but not past a score.
+				redZoneHolds.remove(g.id);
+			}
+		}
+		redZoneHolds.keySet().retainAll(seenGames);
+
+		List<RedZoneAlert> active = new ArrayList<>();
+		List<RedZoneAlert> entered = new ArrayList<>();
+		for (Map.Entry<String, RedZoneHold> e : redZoneHolds.entrySet())
+		{
+			RedZoneHold h = e.getValue();
 			Map<String, RedZoneAlert.Entry> entries = new LinkedHashMap<>();
 			for (Map.Entry<String, LeagueFrame> lfe : frame.leagues.entrySet())
 			{
@@ -485,30 +534,28 @@ public final class Engine
 					continue;
 				}
 				String alias = settings.leagueAlias(leagueId);
-				collectRedZone(entries, lfe.getValue().myStarters, g.possession, true, alias);
+				collectRedZone(entries, lfe.getValue().myStarters, h.team, true, alias);
 				if (settings.includeOpponent())
 				{
-					collectRedZone(entries, lfe.getValue().oppStarters, g.possession, false, alias);
+					collectRedZone(entries, lfe.getValue().oppStarters, h.team, false, alias);
 				}
 			}
-			if (!entries.isEmpty())
+			if (entries.isEmpty())
 			{
-				RedZoneAlert a = new RedZoneAlert(key, g.possession, g.label());
-				a.entries.addAll(entries.values());
-				alerts.put(key, a);
+				continue;
 			}
-		}
-		List<RedZoneAlert> entered = new ArrayList<>();
-		for (RedZoneAlert a : alerts.values())
-		{
-			if (!redZoneActive.contains(a.key))
+			String key = e.getKey() + ":" + h.team;
+			RedZoneAlert a = new RedZoneAlert(key, h.team, h.label);
+			a.entries.addAll(entries.values());
+			active.add(a);
+			Long announced = redZoneAnnounced.get(key);
+			if (announced == null || announced < h.since - REDZONE_REANNOUNCE_MS)
 			{
 				entered.add(a);
 			}
+			redZoneAnnounced.put(key, h.since);
 		}
-		redZoneActive.clear();
-		redZoneActive.addAll(alerts.keySet());
-		listener.redZone(new ArrayList<>(alerts.values()), entered);
+		listener.redZone(active, entered);
 	}
 
 	private void collectRedZone(Map<String, RedZoneAlert.Entry> entries, List<String> starters, String team,
@@ -651,6 +698,11 @@ public final class Engine
 			{
 				break;
 			}
+			if (!e.isMatchupEvent() && statsBaselined && now - e.observedAt < DETAIL_GRACE_MS && explaining(e) == null)
+			{
+				// Keep the order: later plays wait behind this one.
+				break;
+			}
 			it.remove();
 			due.add(e);
 		}
@@ -695,48 +747,96 @@ public final class Engine
 		}
 	}
 
+	/** The impact whose league's scoring describes the play: my first enabled league, else the first. */
+	private PlayEvent.Impact primary(PlayEvent e)
+	{
+		for (PlayEvent.Impact i : e.impacts)
+		{
+			if (i.owner == Owner.MINE && settings.leagueEnabled(i.leagueId))
+			{
+				return i;
+			}
+		}
+		return e.impacts.get(0);
+	}
+
+	private Map<String, Double> scoringOf(PlayEvent.Impact i)
+	{
+		LeagueContext ctx = leagues.get(i.leagueId);
+		return ctx == null ? null : ctx.scoring();
+	}
+
+	/**
+	 * The earliest stat snapshot since the player's last released play whose change is worth exactly the
+	 * play's points, or null. Picks the right snapshot when the stats arrive a poll before or after the scores.
+	 */
+	private StatSnap explaining(PlayEvent e)
+	{
+		PlayEvent.Impact primary = primary(e);
+		Map<String, Double> scoring = scoringOf(primary);
+		ArrayDeque<StatSnap> h = statHistory.get(e.playerId);
+		if (scoring == null || h == null)
+		{
+			return null;
+		}
+		Map<String, Double> start = statCursor.getOrDefault(e.playerId, Collections.emptyMap());
+		long after = statCursorAt.getOrDefault(e.playerId, Long.MIN_VALUE);
+		for (StatSnap snap : h)
+		{
+			if (snap.t > after && Math.abs(Stats.points(Stats.diff(start, snap.stats), scoring) - primary.delta) < 0.011)
+			{
+				return snap;
+			}
+		}
+		return null;
+	}
+
 	private void finalise(PlayEvent e)
 	{
 		String pid = e.playerId;
-		long bound = Long.MAX_VALUE;
-		for (PlayEvent p : pending)
-		{
-			if (pid.equals(p.playerId))
-			{
-				bound = p.observedAt - 1;
-				break;
-			}
-		}
 		Map<String, Double> start = statCursor.getOrDefault(pid, Collections.emptyMap());
+		StatSnap match = explaining(e);
 		Map<String, Double> end = start;
-		ArrayDeque<StatSnap> h = statHistory.get(pid);
-		if (h != null)
+		long endAt = statCursorAt.getOrDefault(pid, Long.MIN_VALUE);
+		if (match != null)
 		{
-			for (StatSnap s : h)
+			end = match.stats;
+			endAt = match.t;
+		}
+		else
+		{
+			// Nothing explains it exactly: take what arrived before this player's next play.
+			long bound = Long.MAX_VALUE;
+			for (PlayEvent p : pending)
 			{
-				if (s.t <= bound)
+				if (pid.equals(p.playerId))
 				{
-					end = s.stats;
+					bound = p.observedAt - 1;
+					break;
+				}
+			}
+			ArrayDeque<StatSnap> h = statHistory.get(pid);
+			if (h != null)
+			{
+				for (StatSnap s : h)
+				{
+					if (s.t <= bound && s.t > endAt)
+					{
+						end = s.stats;
+						endAt = s.t;
+					}
 				}
 			}
 		}
 		if (statsBaselined)
 		{
 			statCursor.put(pid, end);
+			statCursorAt.put(pid, endAt);
 		}
 		Map<String, Double> diff = Stats.diff(start, end);
 
-		PlayEvent.Impact primary = e.impacts.get(0);
-		for (PlayEvent.Impact i : e.impacts)
-		{
-			if (i.owner == Owner.MINE && settings.leagueEnabled(i.leagueId))
-			{
-				primary = i;
-				break;
-			}
-		}
-		LeagueContext ctx = leagues.get(primary.leagueId);
-		Map<String, Double> scoring = ctx == null ? null : ctx.scoring();
+		PlayEvent.Impact primary = primary(e);
+		Map<String, Double> scoring = scoringOf(primary);
 		boolean def = e.player != null && e.player.isTeamDefense();
 		e.categories = Classifier.categories(diff, def, primary.delta, settings.bigPlayYards());
 		List<Classifier.Component> comps = Classifier.components(diff, scoring);
@@ -793,13 +893,11 @@ public final class Engine
 			line.leagueId = ctx.id();
 			line.alias = settings.leagueAlias(ctx.id());
 			line.myOwner = ctx.ownerName(ctx.myRosterId);
-			line.myTeam = ctx.teamName(ctx.myRosterId);
 			line.my = lf.my;
 			if (lf.opp != null)
 			{
 				line.opp = lf.opp;
 				line.oppOwner = ctx.ownerName(lf.oppRosterId);
-				line.oppTeam = ctx.teamName(lf.oppRosterId);
 			}
 			line.myLeft = startersLeft(lf.myStarters, frame.games);
 			line.oppLeft = lf.opp == null ? null : startersLeft(lf.oppStarters, frame.games);

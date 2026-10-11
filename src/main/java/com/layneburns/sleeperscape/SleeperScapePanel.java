@@ -119,13 +119,23 @@ class SleeperScapePanel extends PluginPanel
 		refreshConfig();
 	}
 
+	/**
+	 * A full-width row for the vertical box. Its height follows its content as that changes (the league list
+	 * fills in after loading), so nothing is clipped to the size it had when the panel was built.
+	 */
 	private static JPanel left(Component c)
 	{
-		JPanel row = new JPanel(new BorderLayout());
+		JPanel row = new JPanel(new BorderLayout())
+		{
+			@Override
+			public Dimension getMaximumSize()
+			{
+				return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+			}
+		};
 		row.setOpaque(false);
 		row.add(c, BorderLayout.CENTER);
 		row.setAlignmentX(Component.LEFT_ALIGNMENT);
-		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, c.getPreferredSize().height + 4));
 		return row;
 	}
 
@@ -154,7 +164,7 @@ class SleeperScapePanel extends PluginPanel
 
 	void setStatus(String text)
 	{
-		status.setText(text == null ? " " : "<html>" + Text.escapeHtml(text) + "</html>");
+		status.setText(text == null ? " " : "<html><body style='width:180px'>" + Text.escapeHtml(text) + "</body></html>");
 	}
 
 	void setLeagues(List<LeagueContext> leagues)

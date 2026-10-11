@@ -52,13 +52,6 @@ public final class Sleeper
 	{
 		public String user_id;
 		public String display_name;
-		public Map<String, Object> metadata;
-
-		public String teamName()
-		{
-			Object name = metadata == null ? null : metadata.get("team_name");
-			return name instanceof String && !((String) name).isBlank() ? (String) name : null;
-		}
 	}
 
 	public static final class Matchup

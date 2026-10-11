@@ -119,7 +119,7 @@ public final class Classifier
 			{
 				cats.add(Category.SACKED);
 			}
-			else if (k.equals("idp_int") || k.equals("idp_fum_rec") || k.equals("idp_ff")
+			else if (k.equals("idp_int") || k.equals("idp_fum_rec") || k.equals("idp_ff") || isSpecialTeamsTakeaway(k)
 				|| (teamDefense && (k.equals("int") || k.equals("fum_rec") || k.equals("ff"))))
 			{
 				cats.add(Category.TAKEAWAY);
@@ -159,6 +159,13 @@ public final class Classifier
 			cats.add(diff.isEmpty() && pointsDelta < 0 ? Category.CORRECTION : Category.PLAY);
 		}
 		return cats;
+	}
+
+	/** Takeaways on kicks and punts: def_st_ff, def_st_fum_rec (team DEF), st_ff, st_fum_rec (players). */
+	static boolean isSpecialTeamsTakeaway(String k)
+	{
+		return (k.startsWith("def_st_") || k.startsWith("st_"))
+			&& (k.endsWith("_ff") || k.endsWith("_fum_rec") || k.endsWith("_int"));
 	}
 
 	/** True for touchdown counters (rush_td, rec_td_40p, def_td, idp_int_ret_td ...), not e.g. pts_allow. */

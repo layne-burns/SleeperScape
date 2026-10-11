@@ -40,4 +40,9 @@ tasks.register('run', JavaExec) {
 
 	jvmArgs "-ea"
 	args "--developer-mode", "--debug"
+	// gradlew run -Pprofile=sleeperscape-dev: a separate RuneLite profile (created on first use) with none of
+	// the main profile's Plugin Hub plugins or settings.
+	if (project.hasProperty('profile')) {
+		args "--profile=${project.property('profile')}"
+	}
 }

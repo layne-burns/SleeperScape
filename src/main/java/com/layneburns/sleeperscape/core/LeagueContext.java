@@ -62,13 +62,6 @@ public final class LeagueContext
 		return u == null || u.display_name == null ? "Team " + rosterId : u.display_name;
 	}
 
-	/** The team name the owner set in Sleeper, or null if they never set one. */
-	public String teamName(int rosterId)
-	{
-		Sleeper.LeagueUser u = user(rosterId);
-		return u == null ? null : u.teamName();
-	}
-
 	private Sleeper.LeagueUser user(int rosterId)
 	{
 		Sleeper.Roster r = rosters.get(rosterId);
