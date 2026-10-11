@@ -136,7 +136,7 @@ Each category has a sign and a significance. The tier is from **my** point of vi
   - Usernames only, no team names (changed 2026-10-11 after first use: the team-name version was too large).
 - **Banner overlay** (significant plays): fades after `bannerSeconds` (5). Shows the play and each league's impact. Coalesces bursts.
 - **Chat**: game message for significant plays (`chatMode`: off / significant / all). Format: `[RD] Hurts 12-yd TD run +7.2`.
-- **Overhead text** with every reaction (and every significant play) on the local player for about 3 s: the play, then the leagues it helps and hurts me in, e.g. `TOUCHDOWN Hurts! Helps RD, hurts DYN1`, `INTERCEPTION Winston... Helps UND, hurts KCL`, `Kelce 8 rec yd... Hurts DYN1`, `Took the lead in RD!`.
+- **Overhead text** with every reaction (and every significant play) on the local player, for the reaction's length (6 s): the play, then the leagues it helps and hurts me in, e.g. `TOUCHDOWN Hurts! Helps RD, hurts DYN1`, `INTERCEPTION Winston... Helps UND, hurts KCL`, `Kelce 8 rec yd... Hurts DYN1`, `Took the lead in RD!`.
 - **Avatar reactions**, by tier:
 
   | Tier | Reaction |
@@ -150,7 +150,9 @@ Each category has a sign and a significance. The tier is from **my** point of vi
 
   - **Implementation:** client-side only (`setAnimation` / `createSpotAnim` on the local player, nothing sent to the server). A random pick from each tier's pool. IDs are taken from `gameval` `AnimationID` / `SpotanimID`; exact names and the cloud graphic are chosen in Phase 3.
   - **Config:** `reactionTiers` (which tiers react; default all) and `reactOnlyWhenIdle` (default on).
-  - **Throttling:** a cooldown of about 3 s. Inside a window the strongest tier wins. Strong positive and strong negative together → shrug.
+  - **Looping:** each reaction lasts `reactionSeconds` (default **6 s**): the emote restarts whenever it finishes and the fireworks/lightning are re-created, until the time is up; the overhead text stays up just as long. If I start walking or skilling, the emote stops (the graphic and text carry on).
+  - **Queueing:** one reaction at a time. A waiting play stronger than the one playing interrupts it at once; otherwise the strongest waiting play starts after the current one ends plus `reactionCooldown` (default 1 s). Equal strong good and bad → shrug.
+  - Scored-on graphic: `SpotanimID.SARADOMIN_LIGHTNING` (no rain-cloud spot-anim suited it). Fireworks: `LEVELUP_ANIM`, `LEVELUP_99_ANIM` for a matchup win.
 - **Red-zone overlay** (live, no delay, ESPN):
   - While a team with one of my or my opponent's starters (QB/RB/WR/TE/K) has the ball inside the 20, show a box such as `RED ZONE · PHI — Hurts, Brown [RD, DYN1]`. Mine in pink, the opponent's in red.
   - Players and team only: no down, distance, drive or how they got there.

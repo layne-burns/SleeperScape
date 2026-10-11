@@ -3,8 +3,6 @@ package com.layneburns.sleeperscape;
 import com.layneburns.sleeperscape.core.Category;
 import com.layneburns.sleeperscape.core.PlayEvent;
 import com.layneburns.sleeperscape.core.Tier;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ThreadLocalRandom;
 import net.runelite.api.Client;
@@ -14,8 +12,12 @@ import net.runelite.api.gameval.SpotanimID;
 
 /**
  * My character reacts to plays: an emote by tier, fireworks when I score, lightning when I'm scored on, and
- * overhead text for significant plays. Purely client-side (only I see it); nothing is sent to the server.
- * Plays arrive from the engine thread and are acted on from {@link #onGameTick()} on the client thread.
+ * overhead text naming the play and the leagues it helps or hurts. Each reaction loops its emote and graphic
+ * for {@link SleeperScapeConfig#reactionSeconds()}, with the text up as long. Purely client-side (only I see
+ * it); nothing is sent to the server.
+ *
+ * Plays arrive from the engine thread; everything else runs on the client thread from {@link #onClientTick()}.
+ * A waiting play stronger than the one playing interrupts it; otherwise the strongest waiting play goes next.
  */
 class Reactor
 {
@@ -31,13 +33,21 @@ class Reactor
 
 	// Key in the player's spot-anim table, clear of the slots the server uses.
 	private static final int SPOTANIM_KEY = 0x51EE9;
-	// Client cycles are 20 ms: about 3 s of overhead text.
-	private static final int OVERHEAD_CYCLES = 150;
+	// Client cycles are 20 ms.
+	private static final int MS_PER_CYCLE = 20;
+	// Restart the graphic at least this often, in case a finished one lingers in the actor's table.
+	private static final long SPOTANIM_REPEAT_MS = 3000;
 
 	private final Client client;
 	private final SleeperScapeConfig config;
 	private final ConcurrentLinkedQueue<PlayEvent> queue = new ConcurrentLinkedQueue<>();
-	private long lastReactionAt;
+
+	/** The reaction playing now, or null. */
+	private PlayEvent current;
+	private volatile long endsAt;
+	private int animation = -1;
+	private int spotanim = -1;
+	private long spotanimAt;
 
 	Reactor(Client client, SleeperScapeConfig config)
 	{
@@ -51,80 +61,139 @@ class Reactor
 		queue.add(e);
 	}
 
+	/** From any thread: forget waiting plays and let the current loop end at its next check. */
 	void clear()
 	{
 		queue.clear();
+		endsAt = 0;
 	}
 
-	/** On the client thread. Plays the strongest waiting play once the cooldown has passed. */
-	void onGameTick()
+	/** On the client thread, every client tick. */
+	void onClientTick()
 	{
-		if (queue.isEmpty())
-		{
-			return;
-		}
 		long now = System.currentTimeMillis();
-		if (now - lastReactionAt < config.reactionCooldown() * 1000L)
+		Player me = client.getLocalPlayer();
+		if (current != null && now >= endsAt)
 		{
-			return;
+			current = null;
+			animation = -1;
+			spotanim = -1;
 		}
-		List<PlayEvent> waiting = new ArrayList<>();
-		for (PlayEvent e; (e = queue.poll()) != null; )
+		PlayEvent waiting = strongestWaiting();
+		long gap = config.reactionCooldown() * 1000L;
+		boolean free = current == null && now >= endsAt + gap;
+		if (waiting != null && me != null && (free || stronger(waiting, current)))
 		{
-			waiting.add(e);
+			queue.clear();
+			start(me, waiting, now);
 		}
-		PlayEvent strongest = null;
-		for (PlayEvent e : waiting)
+		else if (waiting != null)
 		{
-			if (e.tier != null && (strongest == null || Math.abs(e.tier.value) > Math.abs(strongest.tier.value)
-				|| (Math.abs(e.tier.value) == Math.abs(strongest.tier.value) && e.significant() && !strongest.significant())))
+			// Keep only the strongest waiting play.
+			queue.clear();
+			queue.add(waiting);
+		}
+		if (current != null && me != null)
+		{
+			keepLooping(me, now);
+		}
+	}
+
+	private PlayEvent strongestWaiting()
+	{
+		PlayEvent best = null;
+		for (PlayEvent e : queue)
+		{
+			if (e.tier == null)
 			{
-				strongest = e;
+				continue;
+			}
+			if (best == null || Math.abs(e.tier.value) > Math.abs(best.tier.value)
+				|| (Math.abs(e.tier.value) == Math.abs(best.tier.value) && e.significant() && !best.significant()))
+			{
+				best = e;
 			}
 		}
-		Player me = client.getLocalPlayer();
-		if (strongest == null || me == null)
-		{
-			return;
-		}
-		lastReactionAt = now;
-		// Every reaction says what caused it; significant plays get the text even with their emote tier off.
-		if (config.overheadText() && (enabled(strongest.tier) || strongest.significant() || strongest.isMatchupEvent()))
-		{
-			me.setOverheadText(Text.overhead(strongest));
-			me.setOverheadCycle(OVERHEAD_CYCLES);
-		}
-		react(me, strongest);
+		return best;
 	}
 
-	private void react(Player me, PlayEvent e)
+	private static boolean stronger(PlayEvent a, PlayEvent b)
 	{
-		Tier tier = e.tier;
-		if (!enabled(tier))
+		return b != null && Math.abs(a.tier.value) > Math.abs(b.tier.value);
+	}
+
+	private void start(Player me, PlayEvent e, long now)
+	{
+		long length = config.reactionSeconds() * 1000L;
+		boolean react = enabled(e.tier);
+		boolean text = config.overheadText() && (react || e.significant() || e.isMatchupEvent());
+		if (!react && !text)
 		{
 			return;
 		}
-		int spotanim = -1;
-		if (tier == Tier.SCORED)
+		current = e;
+		endsAt = now + length;
+		if (text)
+		{
+			// Every reaction says what caused it; significant plays get the text even with their emote tier off.
+			me.setOverheadText(Text.overhead(e));
+			me.setOverheadCycle((int) (length / MS_PER_CYCLE));
+		}
+		animation = -1;
+		spotanim = -1;
+		if (!react)
+		{
+			return;
+		}
+		if (e.tier == Tier.SCORED)
 		{
 			spotanim = e.top() == Category.MATCHUP_FINAL ? SpotanimID.LEVELUP_99_ANIM : SpotanimID.LEVELUP_ANIM;
 		}
-		else if (tier == Tier.SCORED_ON)
+		else if (e.tier == Tier.SCORED_ON)
 		{
 			spotanim = SpotanimID.SARADOMIN_LIGHTNING;
 		}
 		if (spotanim >= 0)
 		{
 			me.createSpotAnim(SPOTANIM_KEY, spotanim, 0, 0);
+			spotanimAt = now;
 		}
-		boolean idle = me.getAnimation() == -1 && me.getPoseAnimation() == me.getIdlePoseAnimation();
-		if (config.reactOnlyWhenIdle() && !idle)
+		if (!config.reactOnlyWhenIdle() || idle(me))
 		{
-			return;
+			int[] pool = pool(e.tier);
+			animation = pool[ThreadLocalRandom.current().nextInt(pool.length)];
+			me.setAnimation(animation);
+			me.setAnimationFrame(0);
 		}
-		int[] pool = pool(tier);
-		me.setAnimation(pool[ThreadLocalRandom.current().nextInt(pool.length)]);
-		me.setAnimationFrame(0);
+	}
+
+	/** Restart the emote and graphic when they finish, until the reaction's time is up. */
+	private void keepLooping(Player me, long now)
+	{
+		if (animation >= 0)
+		{
+			int playing = me.getAnimation();
+			if (playing == -1 && me.getPoseAnimation() == me.getIdlePoseAnimation())
+			{
+				me.setAnimation(animation);
+				me.setAnimationFrame(0);
+			}
+			else if (playing != animation)
+			{
+				// The player started doing something (walking, skilling): stop the emote, keep the rest.
+				animation = -1;
+			}
+		}
+		if (spotanim >= 0 && (!me.hasSpotAnim(spotanim) || now - spotanimAt >= SPOTANIM_REPEAT_MS))
+		{
+			me.createSpotAnim(SPOTANIM_KEY, spotanim, 0, 0);
+			spotanimAt = now;
+		}
+	}
+
+	private static boolean idle(Player me)
+	{
+		return me.getAnimation() == -1 && me.getPoseAnimation() == me.getIdlePoseAnimation();
 	}
 
 	private boolean enabled(Tier tier)

@@ -266,18 +266,32 @@ public interface SleeperScapeConfig extends Config
 		return true;
 	}
 
-	@Range(min = 1, max = 60)
+	@Range(min = 2, max = 20)
 	@Units(Units.SECONDS)
 	@ConfigItem(
-		keyName = "reactionCooldown",
-		name = "Cooldown",
-		description = "At most one reaction this often; the strongest waiting play wins",
+		keyName = "reactionSeconds",
+		name = "Reaction length",
+		description = "How long each reaction loops its emote and fireworks/lightning, and keeps its overhead text up",
 		section = reactionsSection,
 		position = 7
 	)
+	default int reactionSeconds()
+	{
+		return 6;
+	}
+
+	@Range(max = 30)
+	@Units(Units.SECONDS)
+	@ConfigItem(
+		keyName = "reactionCooldown",
+		name = "Gap between reactions",
+		description = "Pause after a reaction ends before the next starts (the strongest waiting play goes next; a stronger play interrupts at once)",
+		section = reactionsSection,
+		position = 8
+	)
 	default int reactionCooldown()
 	{
-		return 3;
+		return 1;
 	}
 
 	// ---- Red zone ----

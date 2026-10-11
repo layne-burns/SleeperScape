@@ -24,7 +24,7 @@ import javax.swing.SwingUtilities;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
-import net.runelite.api.events.GameTick;
+import net.runelite.api.events.ClientTick;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.chat.QueuedMessage;
@@ -199,9 +199,9 @@ public class SleeperScapePlugin extends Plugin
 	}
 
 	@Subscribe
-	public void onGameTick(GameTick tick)
+	public void onClientTick(ClientTick tick)
 	{
-		reactor.onGameTick();
+		reactor.onClientTick();
 	}
 
 	private void chat(String message)
