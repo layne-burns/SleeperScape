@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import com.google.gson.Gson;
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
@@ -148,5 +149,17 @@ public class ClassifierTest
 		assertTrue(ahead.probability() > 0.9);
 		assertEquals(0.5, WinProbability.phi(0), 1e-6);
 		assertEquals(0.8413, WinProbability.phi(1), 1e-3);
+	}
+
+	@Test
+	public void mixedPlaysResolveByNetPointsForMe()
+	{
+		List<Tier> pick = Arrays.asList(Tier.VERY_BAD, Tier.VERY_GOOD);
+		// Same pick, my QB in one league (-2) and my opponent's in another (-1 there, so +1 for me): net -1.
+		assertEquals(Tier.VERY_BAD, Tier.combine(pick, -1));
+		assertEquals(Tier.VERY_GOOD, Tier.combine(pick, 1));
+		assertEquals(Tier.CONFLICTED, Tier.combine(pick, 0));
+		// The stronger side wins outright.
+		assertEquals(Tier.SCORED, Tier.combine(Arrays.asList(Tier.SCORED, Tier.BAD), -5));
 	}
 }

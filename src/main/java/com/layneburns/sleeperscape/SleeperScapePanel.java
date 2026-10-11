@@ -2,7 +2,6 @@ package com.layneburns.sleeperscape;
 
 import com.layneburns.sleeperscape.core.Format;
 import com.layneburns.sleeperscape.core.LeagueContext;
-import com.layneburns.sleeperscape.core.Owner;
 import com.layneburns.sleeperscape.core.PlayEvent;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -248,11 +247,9 @@ class SleeperScapePanel extends PluginPanel
 			sb.append(" · while offline");
 		}
 		sb.append("</span> ");
-		// The play's own colour follows its first visible side (mine are listed first).
-		Owner lead = e.isMatchupEvent() ? Owner.MINE : e.visible.get(0).owner;
 		for (PlayEvent.Impact i : e.visible)
 		{
-			sb.append("<span style='color:").append(Colors.hex(Colors.feed(e, i.owner))).append("'>[")
+			sb.append("<span style='color:").append(Colors.hex(Colors.play(e, i.tier))).append("'>[")
 				.append(Text.escapeHtml(i.alias));
 			if (!e.isMatchupEvent())
 			{
@@ -263,12 +260,12 @@ class SleeperScapePanel extends PluginPanel
 		sb.append("<br>");
 		if (e.significant() || e.isMatchupEvent())
 		{
-			sb.append("<b style='color:").append(Colors.hex(Colors.feed(e, lead))).append("'>")
+			sb.append("<b style='color:").append(Colors.hex(Colors.play(e, e.tier))).append("'>")
 				.append(Text.escapeHtml(e.top().headline)).append("</b> ");
 		}
 		if (!e.isMatchupEvent())
 		{
-			sb.append("<span style='color:").append(Colors.hex(Colors.feed(e, lead))).append("'>")
+			sb.append("<span style='color:").append(Colors.hex(Colors.play(e, e.tier))).append("'>")
 				.append(Text.escapeHtml(e.name())).append("</span> ");
 		}
 		String detail = e.detail();

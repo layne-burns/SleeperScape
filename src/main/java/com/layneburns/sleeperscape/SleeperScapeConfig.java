@@ -181,7 +181,7 @@ public interface SleeperScapeConfig extends Config
 	@ConfigItem(
 		keyName = "overheadText",
 		name = "Overhead text",
-		description = "Significant plays as text over your character",
+		description = "Text over your character with each reaction: the play and the leagues it helps or hurts",
 		section = displaySection,
 		position = 8
 	)

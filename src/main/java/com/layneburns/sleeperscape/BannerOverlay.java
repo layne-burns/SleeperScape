@@ -73,7 +73,7 @@ class BannerOverlay extends OverlayPanel
 			for (PlayEvent e : showing)
 			{
 				panelComponent.getChildren().add(LineComponent.builder()
-					.left(e.top().headline + " " + e.shortName()).leftColor(Colors.tier(e.tier))
+					.left(e.top().headline + " " + e.shortName()).leftColor(Colors.play(e, e.tier))
 					.right(Text.impactsPlain(e)).rightColor(Colors.MUTED)
 					.build());
 			}
@@ -115,12 +115,12 @@ class BannerOverlay extends OverlayPanel
 
 	private void drawPlay(PlayEvent e)
 	{
-		panelComponent.getChildren().add(TitleComponent.builder().text(e.top().headline).color(Colors.tier(e.tier)).build());
+		panelComponent.getChildren().add(TitleComponent.builder().text(e.top().headline).color(Colors.play(e, e.tier)).build());
 		if (!e.isMatchupEvent())
 		{
 			String pt = e.positionTeam();
 			panelComponent.getChildren().add(LineComponent.builder()
-				.left(e.name()).leftColor(Colors.owner(e.visible.get(0).owner))
+				.left(e.name()).leftColor(Colors.play(e, e.tier))
 				.right(pt).rightColor(Colors.MUTED)
 				.build());
 		}
@@ -136,9 +136,9 @@ class BannerOverlay extends OverlayPanel
 		for (PlayEvent.Impact i : e.visible)
 		{
 			panelComponent.getChildren().add(LineComponent.builder()
-				.left(i.alias).leftColor(Colors.owner(i.owner))
+				.left(i.alias).leftColor(Colors.play(e, i.tier))
 				.right(e.isMatchupEvent() ? "" : Format.points(i.delta))
-				.rightColor(Colors.owner(i.owner))
+				.rightColor(Colors.play(e, i.tier))
 				.build());
 		}
 	}

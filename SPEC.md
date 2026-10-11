@@ -127,7 +127,8 @@ Each category has a sign and a significance. The tier is from **my** point of vi
   - Delay: preset buttons **30 s / 60 s / 90 s / 120 s** that snap to that value, plus ±5 s buttons to fine-tune.
   - Mute toggle, which pauses banner, chat, overhead text and reactions; the feed continues.
   - Full feed of *every* delta (filters applied), newest first: time, `[ALIAS ±points]`, headline (significant only), player, text.
-  - Feed colours: non-significant plays neutral; significant plays green when mine, red when my opponent's, and **pink for my scoring plays** (TD, 2-pt, FG). Lead changes and finals: pink for a win, green/red for taking/losing the lead.
+  - Feed colours (also chat and banner): routine plays neutral; significant plays **green when good for me, red when bad for me** (so my opponent's QB throwing a pick is green), and **pink for my scoring plays** (TD, 2-pt, FG). Each `[league ±pts]` tag is coloured by how the play went for me in that league; the headline and name by how it went overall.
+  - Mixed plays (the same player is mine in one league and my opponent's in another): the stronger side wins; when both are equally strong, my net fantasy points across those leagues decide (`Tier.combine`), and an exact wash is neutral (and a shrug).
 - **Scoreboard overlay** (delayed), compact (small font, ~150 px), three lines per enabled league:
   - `RD          62% · 3v2 left` (alias, then win % and starters left, each only when known; both need ESPN)
   - `LBBurnsy   87.4` (my username in pink; my score **green while I lead**, neutral otherwise)
@@ -135,7 +136,7 @@ Each category has a sign and a significance. The tier is from **my** point of vi
   - Usernames only, no team names (changed 2026-10-11 after first use: the team-name version was too large).
 - **Banner overlay** (significant plays): fades after `bannerSeconds` (5). Shows the play and each league's impact. Coalesces bursts.
 - **Chat**: game message for significant plays (`chatMode`: off / significant / all). Format: `[RD] Hurts 12-yd TD run +7.2`.
-- **Overhead text** (significant plays) on the local player for about 3 s, e.g. `TOUCHDOWN Hurts!` / `Picked off…`.
+- **Overhead text** with every reaction (and every significant play) on the local player for about 3 s: the play, then the leagues it helps and hurts me in, e.g. `TOUCHDOWN Hurts! Helps RD, hurts DYN1`, `INTERCEPTION Winston... Helps UND, hurts KCL`, `Kelce 8 rec yd... Hurts DYN1`, `Took the lead in RD!`.
 - **Avatar reactions**, by tier:
 
   | Tier | Reaction |

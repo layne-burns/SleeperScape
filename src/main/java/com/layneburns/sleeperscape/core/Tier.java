@@ -46,10 +46,14 @@ public enum Tier
 	}
 
 	/**
-	 * The reaction for several tiers at once: the strongest wins, and a tie between strong good and strong
-	 * bad (my player scores in one league and is my opponent's in another) is a shrug.
+	 * How a play went for me overall, from its per-league tiers: the strongest wins. When good and bad are
+	 * equally strong (my QB throws a pick in one league while my opponent owns him in another), my net
+	 * fantasy points across those leagues decide; an exact wash is {@link #CONFLICTED} (a shrug).
+	 *
+	 * @param netForMe sum of the points deltas, counted positive when they help me and negative when they help
+	 *                 my opponent
 	 */
-	public static Tier combine(Iterable<Tier> tiers)
+	public static Tier combine(Iterable<Tier> tiers, double netForMe)
 	{
 		Tier best = null;
 		Tier worst = null;
@@ -68,9 +72,9 @@ public enum Tier
 		{
 			return null;
 		}
-		if (best.value >= 2 && worst.value <= -2 && best.value == -worst.value)
+		if (best.value > 0 && worst.value < 0 && best.value == -worst.value)
 		{
-			return CONFLICTED;
+			return netForMe > 0.005 ? best : netForMe < -0.005 ? worst : CONFLICTED;
 		}
 		return best.value >= -worst.value ? best : worst;
 	}

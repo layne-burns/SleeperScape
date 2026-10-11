@@ -88,7 +88,8 @@ class Reactor
 			return;
 		}
 		lastReactionAt = now;
-		if (config.overheadText() && (strongest.significant() || strongest.isMatchupEvent()))
+		// Every reaction says what caused it; significant plays get the text even with their emote tier off.
+		if (config.overheadText() && (enabled(strongest.tier) || strongest.significant() || strongest.isMatchupEvent()))
 		{
 			me.setOverheadText(Text.overhead(strongest));
 			me.setOverheadCycle(OVERHEAD_CYCLES);

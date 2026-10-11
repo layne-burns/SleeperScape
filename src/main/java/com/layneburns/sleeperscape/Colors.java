@@ -1,11 +1,13 @@
 package com.layneburns.sleeperscape;
 
-import com.layneburns.sleeperscape.core.Owner;
 import com.layneburns.sleeperscape.core.PlayEvent;
 import com.layneburns.sleeperscape.core.Tier;
 import java.awt.Color;
 
-/** Pink is mine (the top colour across these plugins); red is my opponent's, and bad; green is me winning. */
+/**
+ * Pink is mine and the best (my scoring plays; my name), green is good for me, red is bad for me (and my
+ * opponent's name).
+ */
 final class Colors
 {
 	static final Color MINE = new Color(255, 105, 180);
@@ -19,45 +21,24 @@ final class Colors
 	{
 	}
 
-	static Color owner(Owner owner)
-	{
-		return owner == Owner.MINE ? MINE : OPPONENT;
-	}
-
-	/** Good for me reads pink, bad reads red. */
+	/** Good for me is green (pink for my scoring plays), bad is red; a wash is neutral. */
 	static Color tier(Tier tier)
 	{
 		if (tier == null || tier == Tier.CONFLICTED)
 		{
 			return NEUTRAL;
 		}
-		return tier.positive() ? MINE : OPPONENT;
+		if (tier == Tier.SCORED)
+		{
+			return MINE;
+		}
+		return tier.positive() ? WINNING : OPPONENT;
 	}
 
-	/**
-	 * Side-panel feed colour for one side of a play: neutral unless the play is significant; then pink for my
-	 * scoring play (TD, 2-pt, FG), green for my other significant plays, red for my opponent's. Matchup events
-	 * (lead change, final) follow how they went for me.
-	 */
-	static Color feed(PlayEvent e, Owner owner)
+	/** Colour for a play (or one league's side of it) in the feed, chat and banner: routine plays stay neutral. */
+	static Color play(PlayEvent e, Tier tier)
 	{
-		if (e.isMatchupEvent())
-		{
-			if (e.tier == Tier.SCORED)
-			{
-				return MINE;
-			}
-			return e.tier == null || e.tier == Tier.CONFLICTED ? NEUTRAL : e.tier.positive() ? WINNING : OPPONENT;
-		}
-		if (!e.significant())
-		{
-			return NEUTRAL;
-		}
-		if (owner != Owner.MINE)
-		{
-			return OPPONENT;
-		}
-		return e.top().fixedTier == Tier.SCORED ? MINE : WINNING;
+		return e.significant() || e.isMatchupEvent() ? tier(tier) : NEUTRAL;
 	}
 
 	static String hex(Color c)

@@ -5,6 +5,8 @@ import com.layneburns.sleeperscape.core.Format;
 import com.layneburns.sleeperscape.core.PlayEvent;
 import com.layneburns.sleeperscape.core.RedZoneAlert;
 import com.layneburns.sleeperscape.core.Tier;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.stream.Collectors;
 import net.runelite.client.util.ColorUtil;
 
@@ -35,16 +37,16 @@ final class Text
 			}
 			first = false;
 			String part = e.isMatchupEvent() ? i.alias : i.alias + " " + Format.points(i.delta);
-			sb.append(ColorUtil.wrapWithColorTag(part, Colors.owner(i.owner)));
+			sb.append(ColorUtil.wrapWithColorTag(part, Colors.play(e, i.tier)));
 		}
 		sb.append("] ");
 		if (e.significant() || e.isMatchupEvent())
 		{
-			sb.append(ColorUtil.wrapWithColorTag(e.top().headline, Colors.tier(e.tier))).append(' ');
+			sb.append(ColorUtil.wrapWithColorTag(e.top().headline, Colors.play(e, e.tier))).append(' ');
 		}
 		if (!e.isMatchupEvent())
 		{
-			sb.append(ColorUtil.wrapWithColorTag(e.name(), Colors.owner(e.visible.get(0).owner)));
+			sb.append(ColorUtil.wrapWithColorTag(e.name(), Colors.play(e, e.tier)));
 		}
 		String detail = e.detail();
 		if (!detail.isEmpty())
@@ -54,20 +56,63 @@ final class Text
 		return sb.toString();
 	}
 
-	/** "TOUCHDOWN Hurts!" over my character. */
+	/**
+	 * Over my character with each reaction: the play, then the leagues it helps and hurts me in, e.g.
+	 * "TOUCHDOWN Hurts! Helps RD, hurts DYN1" or "Kelce 8 rec yd... Hurts DYN1".
+	 */
 	static String overhead(PlayEvent e)
 	{
 		Tier t = e.tier;
 		boolean good = t != null && t.positive();
+		String alias = e.visible.isEmpty() ? "" : e.visible.get(0).alias;
 		if (e.top() == Category.MATCHUP_FINAL)
 		{
-			return t == Tier.SCORED ? "WE WON!" : t == Tier.SCORED_ON ? "We lost..." : "A tie?!";
+			return t == Tier.SCORED ? "WON " + alias + "!" : t == Tier.SCORED_ON ? "Lost " + alias + "..." : "Tied " + alias + ".";
 		}
 		if (e.top() == Category.LEAD_CHANGE)
 		{
-			return good ? "Took the lead!" : "Lost the lead...";
+			return good ? "Took the lead in " + alias + "!" : "Lost the lead in " + alias + "...";
 		}
-		return e.top().headline + " " + e.shortName() + (good ? "!" : "...");
+		String what;
+		if (e.significant())
+		{
+			what = e.top().headline + " " + e.shortName();
+		}
+		else if (!e.components.isEmpty())
+		{
+			what = e.shortName() + " " + e.components.get(0).label;
+		}
+		else
+		{
+			what = e.shortName() + " " + Format.points(e.visible.get(0).delta);
+		}
+		String end = t == null || t == Tier.CONFLICTED ? "." : good ? "!" : "...";
+		return what + end + effects(e);
+	}
+
+	/** " Helps RD, DYN1, hurts UND" from each league's tier for me. */
+	private static String effects(PlayEvent e)
+	{
+		List<String> helps = new ArrayList<>();
+		List<String> hurts = new ArrayList<>();
+		for (PlayEvent.Impact i : e.visible)
+		{
+			if (i.tier == null || i.tier == Tier.CONFLICTED)
+			{
+				continue;
+			}
+			(i.tier.positive() ? helps : hurts).add(i.alias);
+		}
+		StringBuilder sb = new StringBuilder();
+		if (!helps.isEmpty())
+		{
+			sb.append(" Helps ").append(String.join(", ", helps));
+		}
+		if (!hurts.isEmpty())
+		{
+			sb.append(helps.isEmpty() ? " Hurts " : ", hurts ").append(String.join(", ", hurts));
+		}
+		return sb.toString();
 	}
 
 	static String redZoneChat(RedZoneAlert a)

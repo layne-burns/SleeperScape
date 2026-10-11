@@ -722,6 +722,7 @@ public final class Engine
 		}
 		List<PlayEvent.Impact> visible = new ArrayList<>();
 		List<Tier> tiers = new ArrayList<>();
+		double netForMe = 0;
 		for (PlayEvent.Impact i : e.impacts)
 		{
 			i.alias = settings.leagueAlias(i.leagueId);
@@ -730,12 +731,13 @@ public final class Engine
 			{
 				visible.add(i);
 				tiers.add(i.tier);
+				netForMe += i.owner == Owner.MINE ? i.delta : -i.delta;
 			}
 		}
 		// Mine first, then by size of the swing.
 		visible.sort((a, b) -> a.owner != b.owner ? a.owner.compareTo(b.owner) : Double.compare(Math.abs(b.delta), Math.abs(a.delta)));
 		e.visible = visible;
-		e.tier = Tier.combine(tiers);
+		e.tier = Tier.combine(tiers, netForMe);
 		if (!visible.isEmpty())
 		{
 			recent.addLast(e);
