@@ -28,7 +28,7 @@ User decisions so far:
 | Sleeper `v1/league/<id>/rosters`, `/users` | my roster_id (incl. co-owner), team names | start + every 10 min |
 | Sleeper `v1/league/<id>/matchups/<week>` | **Level 1**: authoritative per-league `players_points`, `starters`, `points`, `matchup_id` | 10 s while games live, 5 min otherwise |
 | Sleeper `v1/players/nfl` (~5 MB) | names, positions, team, `espn_id` | cached on disk, refreshed daily |
-| Sleeper `v1/stats/nfl/<type>/<season>/<week>` (unofficial; ~270 KB object keyed by player; the `api.sleeper.com/stats/...` array, ~1.3 MB, is the fallback) | **Level 2**: per-player stat lines incl. IDP | 10 s while live |
+| Sleeper `api.sleeper.com/stats/nfl/<season>/<week>?season_type=` (unofficial; ~1.3 MB array). Fallbacks: the same on `api.sleeper.app`, then `v1/stats/nfl/<type>/<season>/<week>` (~270 KB, but it lagged the live scores on 2026-10-11 and left most plays without a stat line) | **Level 2**: per-player stat lines incl. IDP | 10 s while live |
 | Sleeper `projections/nfl/<season>/<week>` (unofficial) | win % | every 10 min |
 | ESPN `site.api.espn.com/.../nfl/scoreboard` (unofficial) | game status/clock, possession, `isRedZone` | 10 s while live |
 | ESPN game summary / core plays (unofficial) | **Level 3**: play text, play yards, participants | on demand, for games with a fresh delta |
@@ -110,6 +110,7 @@ Each category has a sign and a significance. The tier is from **my** point of vi
 | Matchup | Lead change (I take the lead / lose it) | ✔ | VERY_GOOD / VERY_BAD |
 | | Matchup final (win / loss) | ✔ | SCORED / SCORED_ON |
 | Other | Correction (no stat explanation); "TD overturned" | TD only | by sign |
+| | **BIG SWING**: ±4 points or more with no stat line to explain it (the stat feed lagging), so a likely TD is never shown as routine | ✔ | VERY_GOOD / VERY_BAD |
 
 - A merged poll (several stats in one delta) keeps **every** category. Its components are listed in descending order of points, e.g. `Hurts: rush TD +6.0 · 12 rush yd +1.2`. The event is significant if any component is, and it takes the tier of its strongest component. Stats the league doesn't score add no points, so they are left out of the list.
 - **Text:**
@@ -126,7 +127,8 @@ Each category has a sign and a significance. The tier is from **my** point of vi
   - League list: toggle and alias.
   - Delay: preset buttons **30 s / 60 s / 90 s / 120 s** that snap to that value, plus ±5 s buttons to fine-tune.
   - Mute toggle, which pauses banner, chat, overhead text and reactions; the feed continues.
-  - Full feed of *every* delta (filters applied), newest first: time, `[ALIAS ±points]`, headline (significant only), player, text.
+  - Full feed of *every* delta (filters applied), newest first. Each entry: time, headline (significant only) and player; then each league's side as `[ALIAS ±points] Owner` (`You` for mine, else the opponent's Sleeper name); then the breakdown.
+  - Row background, for every play: **green** when it only helps me, **red** when it only hurts me, **orange** when it does both (my player in one league, my opponent's in another). Significant plays get a stronger tint.
   - Feed colours (also chat and banner): routine plays neutral; significant plays **green when good for me, red when bad for me** (so my opponent's QB throwing a pick is green), and **pink for my scoring plays** (TD, 2-pt, FG). Each `[league ±pts]` tag is coloured by how the play went for me in that league; the headline and name by how it went overall.
   - Mixed plays (the same player is mine in one league and my opponent's in another): the stronger side wins; when both are equally strong, my net fantasy points across those leagues decide (`Tier.combine`), and an exact wash is neutral (and a shrug).
 - **Scoreboard overlay** (delayed), compact (small font, ~150 px), three lines per enabled league:

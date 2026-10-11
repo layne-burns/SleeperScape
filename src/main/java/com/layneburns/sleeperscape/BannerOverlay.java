@@ -1,6 +1,7 @@
 package com.layneburns.sleeperscape;
 
 import com.layneburns.sleeperscape.core.Format;
+import com.layneburns.sleeperscape.core.Owner;
 import com.layneburns.sleeperscape.core.PlayEvent;
 import java.awt.AlphaComposite;
 import java.awt.Composite;
@@ -136,7 +137,7 @@ class BannerOverlay extends OverlayPanel
 		for (PlayEvent.Impact i : e.visible)
 		{
 			panelComponent.getChildren().add(LineComponent.builder()
-				.left(i.alias).leftColor(Colors.play(e, i.tier))
+				.left(i.alias + " " + (i.owner == Owner.MINE ? "You" : i.ownerName)).leftColor(Colors.play(e, i.tier))
 				.right(e.isMatchupEvent() ? "" : Format.points(i.delta))
 				.rightColor(Colors.play(e, i.tier))
 				.build());

@@ -452,4 +452,20 @@ public class EngineTest
 		engine.tick(11_000 + Engine.DETAIL_GRACE_MS);
 		assertEquals(1, released.size());
 	}
+
+	@Test
+	public void bigUnexplainedSwingIsSignificantAndNamesOwners()
+	{
+		engine.ingest(cycle(1000, 10, 5));
+		// +6.3 with no stat line at all (the stat feed lagging past the grace).
+		engine.ingest(cycle(11_000, 16.3, 5));
+		engine.tick(11_000 + Engine.DETAIL_GRACE_MS);
+		assertEquals(1, released.size());
+		PlayEvent e = released.get(0);
+		assertEquals(Category.BIG_SWING, e.top());
+		assertTrue(e.significant());
+		assertEquals(Tier.VERY_GOOD, e.visible.get(0).tier);
+		assertEquals(Tier.VERY_BAD, e.visible.get(1).tier);
+		assertEquals("Team 2", e.visible.get(1).ownerName);
+	}
 }

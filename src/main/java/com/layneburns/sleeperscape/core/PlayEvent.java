@@ -19,14 +19,17 @@ public final class PlayEvent
 		public final Owner owner;
 		public final boolean starter;
 		public final double delta;
+		/** The owner's Sleeper display name in that league. */
+		public final String ownerName;
 		public Tier tier;
 		/** Set at release from the league alias. */
 		public String alias;
 
-		Impact(String leagueId, Owner owner, boolean starter, double delta)
+		Impact(String leagueId, Owner owner, String ownerName, boolean starter, double delta)
 		{
 			this.leagueId = leagueId;
 			this.owner = owner;
+			this.ownerName = ownerName;
 			this.starter = starter;
 			this.delta = delta;
 		}

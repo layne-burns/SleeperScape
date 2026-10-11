@@ -2,6 +2,7 @@ package com.layneburns.sleeperscape;
 
 import com.layneburns.sleeperscape.core.Format;
 import com.layneburns.sleeperscape.core.LeagueContext;
+import com.layneburns.sleeperscape.core.Owner;
 import com.layneburns.sleeperscape.core.PlayEvent;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -201,7 +202,17 @@ class SleeperScapePanel extends PluginPanel
 
 	void addPlay(PlayEvent e)
 	{
-		JLabel label = new JLabel(html(e));
+		JLabel label = new JLabel(html(e))
+		{
+			@Override
+			public Dimension getMaximumSize()
+			{
+				// Full width, so the row's tint spans the panel.
+				return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+			}
+		};
+		label.setOpaque(true);
+		label.setBackground(Colors.background(e, ColorScheme.DARKER_GRAY_COLOR));
 		label.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 0, 1, 0, ColorScheme.DARK_GRAY_COLOR),
 			BorderFactory.createEmptyBorder(4, 4, 4, 4)));
@@ -237,48 +248,54 @@ class SleeperScapePanel extends PluginPanel
 		feed.repaint();
 	}
 
+	/**
+	 * Time and headline (significant plays only) and player; then each league's side ("[UND +6.3] CaptainKusch",
+	 * "[KCL +0.4] You"); then the breakdown.
+	 */
 	private String html(PlayEvent e)
 	{
 		StringBuilder sb = new StringBuilder("<html><body style='width:170px'>");
-		sb.append("<span style='color:").append(Colors.hex(Colors.MUTED)).append("'>")
-			.append(clock.format(new Date(e.observedAt)));
+		sb.append(span(Colors.MUTED, clock.format(new Date(e.observedAt))));
 		if (e.offline)
 		{
-			sb.append(" · while offline");
+			sb.append(span(Colors.MUTED, " · while offline"));
 		}
-		sb.append("</span> ");
-		for (PlayEvent.Impact i : e.visible)
-		{
-			sb.append("<span style='color:").append(Colors.hex(Colors.play(e, i.tier))).append("'>[")
-				.append(Text.escapeHtml(i.alias));
-			if (!e.isMatchupEvent())
-			{
-				sb.append(' ').append(Format.points(i.delta));
-			}
-			sb.append("]</span> ");
-		}
-		sb.append("<br>");
+		sb.append(' ');
 		if (e.significant() || e.isMatchupEvent())
 		{
-			sb.append("<b style='color:").append(Colors.hex(Colors.play(e, e.tier))).append("'>")
-				.append(Text.escapeHtml(e.top().headline)).append("</b> ");
+			sb.append("<b>").append(span(Colors.play(e, e.tier), e.top().headline)).append("</b> ");
 		}
 		if (!e.isMatchupEvent())
 		{
-			sb.append("<span style='color:").append(Colors.hex(Colors.play(e, e.tier))).append("'>")
-				.append(Text.escapeHtml(e.name())).append("</span> ");
+			sb.append(span(Colors.play(e, e.tier), e.name()));
+		}
+		sb.append("<br>");
+		boolean first = true;
+		for (PlayEvent.Impact i : e.visible)
+		{
+			if (!first)
+			{
+				sb.append(span(Colors.MUTED, " · "));
+			}
+			first = false;
+			String tag = "[" + i.alias + (e.isMatchupEvent() ? "" : " " + Format.points(i.delta)) + "]";
+			sb.append(span(Colors.play(e, i.tier), tag)).append(' ')
+				.append(span(Colors.NEUTRAL, i.owner == Owner.MINE ? "You" : i.ownerName));
 		}
 		String detail = e.detail();
 		if (!detail.isEmpty())
 		{
-			sb.append("<br><span style='color:").append(Colors.hex(Colors.NEUTRAL)).append("'>")
-				.append(Text.escapeHtml(detail)).append("</span>");
+			sb.append("<br>").append(span(Colors.NEUTRAL, detail));
 		}
 		if (e.playText != null && !e.breakdown().isEmpty())
 		{
-			sb.append("<br><span style='color:").append(Colors.hex(Colors.MUTED)).append("'>")
-				.append(Text.escapeHtml(e.breakdown())).append("</span>");
+			sb.append("<br>").append(span(Colors.MUTED, e.breakdown()));
 		}
 		return sb.append("</body></html>").toString();
+	}
+
+	private static String span(Color color, String text)
+	{
+		return "<span style='color:" + Colors.hex(color) + "'>" + Text.escapeHtml(text) + "</span>";
 	}
 }

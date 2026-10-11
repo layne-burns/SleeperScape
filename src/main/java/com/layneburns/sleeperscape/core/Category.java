@@ -21,6 +21,8 @@ public enum Category
 	MILESTONE("MILESTONE", true, Tier.VERY_GOOD),
 	BIG_PLAY("BIG PLAY", true, Tier.VERY_GOOD),
 	FG_MISSED("FG MISSED", true, Tier.BAD),
+	/** A big change with no stat line to explain it yet (the stat feed lagging the scores). */
+	BIG_SWING("BIG SWING", true, null),
 	POINTS_ALLOWED("POINTS ALLOWED", true, null),
 	LEAD_CHANGE("LEAD CHANGE", true, null),
 	MATCHUP_FINAL("FINAL", true, null),
@@ -47,6 +49,10 @@ public enum Category
 		if (fixedTier != null)
 		{
 			return fixedTier;
+		}
+		if (this == BIG_SWING)
+		{
+			return points >= 0 ? Tier.VERY_GOOD : Tier.VERY_BAD;
 		}
 		return points >= 0 ? Tier.GOOD : Tier.BAD;
 	}

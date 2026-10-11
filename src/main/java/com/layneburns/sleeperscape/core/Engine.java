@@ -122,6 +122,8 @@ public final class Engine
 	 * explains yet waits this long (from when it was seen) for the stats, even with a shorter delay.
 	 */
 	static final long DETAIL_GRACE_MS = 15_000;
+	/** A change this big with no stat line to explain it is shown as a significant BIG SWING. */
+	static final double BIG_SWING_POINTS = 4.0;
 	static final Set<String> OFFENSE = Set.of("QB", "RB", "WR", "TE", "K", "FB");
 
 	private final Settings settings;
@@ -259,7 +261,7 @@ public final class Engine
 					}
 					boolean starter = row.starters != null && row.starters.contains(p.getKey());
 					deltas.computeIfAbsent(p.getKey(), k -> new ArrayList<>())
-						.add(new PlayEvent.Impact(leagueId, owner, starter, pts - before));
+						.add(new PlayEvent.Impact(leagueId, owner, ctx.ownerName(row.roster_id), starter, pts - before));
 					offline.merge(p.getKey(), gap, Boolean::logicalOr);
 				}
 			}
@@ -441,7 +443,7 @@ public final class Engine
 	{
 		PlayEvent e = new PlayEvent(null, null, t, false);
 		e.categories = EnumSet.of(Category.LEAD_CHANGE);
-		PlayEvent.Impact i = new PlayEvent.Impact(ctx.id(), Owner.MINE, true, lf.my - lf.opp);
+		PlayEvent.Impact i = new PlayEvent.Impact(ctx.id(), Owner.MINE, ctx.ownerName(ctx.myRosterId), true, lf.my - lf.opp);
 		i.tier = mineNow ? Tier.VERY_GOOD : Tier.VERY_BAD;
 		e.impacts.add(i);
 		e.message = (mineNow ? "You took the lead " : ctx.ownerName(lf.oppRosterId) + " took the lead ")
@@ -475,7 +477,7 @@ public final class Engine
 			PlayEvent ev = new PlayEvent(null, null, frame.t, false);
 			ev.categories = EnumSet.of(Category.MATCHUP_FINAL);
 			double margin = lf.my - lf.opp;
-			PlayEvent.Impact i = new PlayEvent.Impact(ctx.id(), Owner.MINE, true, margin);
+			PlayEvent.Impact i = new PlayEvent.Impact(ctx.id(), Owner.MINE, ctx.ownerName(ctx.myRosterId), true, margin);
 			i.tier = margin > 0.005 ? Tier.SCORED : margin < -0.005 ? Tier.SCORED_ON : Tier.CONFLICTED;
 			ev.impacts.add(i);
 			ev.message = (margin > 0.005 ? "W " : margin < -0.005 ? "L " : "T ") + Format.score(lf.my) + "–"
@@ -837,6 +839,11 @@ public final class Engine
 		Map<String, Double> scoring = scoringOf(primary);
 		boolean def = e.player != null && e.player.isTeamDefense();
 		e.categories = Classifier.categories(diff, def, primary.delta, settings.bigPlayYards());
+		if (diff.isEmpty() && Math.abs(primary.delta) >= BIG_SWING_POINTS)
+		{
+			// No stat line yet (the stat feed lagging): don't let a likely touchdown pass as routine.
+			e.categories = EnumSet.of(Category.BIG_SWING);
+		}
 		List<Classifier.Component> comps = Classifier.components(diff, scoring);
 		double explained = 0;
 		for (Classifier.Component c : comps)
