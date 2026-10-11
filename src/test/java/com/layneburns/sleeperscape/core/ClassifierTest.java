@@ -51,6 +51,7 @@ public class ClassifierTest
 		// An offensive player recovering his own fumble is not a takeaway.
 		assertFalse(cats(diff("fum_rec", 1), false).contains(Category.TAKEAWAY));
 		assertEquals(Category.SACK, cats(diff("sack", 1), true).iterator().next());
+		assertEquals(Category.TAKEAWAY, cats(diff("def_st_ff", 1, "def_st_fum_rec", 1), true).iterator().next());
 		assertEquals(Category.TOUCHDOWN, cats(diff("def_td", 1, "int", 1), true).iterator().next());
 		assertEquals(Category.POINTS_ALLOWED, cats(diff("pts_allow_7_13", -1, "pts_allow_14_20", 1), true).iterator().next());
 		assertEquals(Category.SACK, cats(diff("idp_sack", 1, "idp_tkl_solo", 1), false).iterator().next());

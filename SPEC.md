@@ -28,7 +28,7 @@ User decisions so far:
 | Sleeper `v1/league/<id>/rosters`, `/users` | my roster_id (incl. co-owner), team names | start + every 10 min |
 | Sleeper `v1/league/<id>/matchups/<week>` | **Level 1**: authoritative per-league `players_points`, `starters`, `points`, `matchup_id` | 10 s while games live, 5 min otherwise |
 | Sleeper `v1/players/nfl` (~5 MB) | names, positions, team, `espn_id` | cached on disk, refreshed daily |
-| Sleeper `stats/nfl/<season>/<week>` (unofficial) | **Level 2**: per-player stat lines incl. IDP | 10 s while live |
+| Sleeper `v1/stats/nfl/<type>/<season>/<week>` (unofficial; ~270 KB object keyed by player; the `api.sleeper.com/stats/...` array, ~1.3 MB, is the fallback) | **Level 2**: per-player stat lines incl. IDP | 10 s while live |
 | Sleeper `projections/nfl/<season>/<week>` (unofficial) | win % | every 10 min |
 | ESPN `site.api.espn.com/.../nfl/scoreboard` (unofficial) | game status/clock, possession, `isRedZone` | 10 s while live |
 | ESPN game summary / core plays (unofficial) | **Level 3**: play text, play yards, participants | on demand, for games with a fresh delta |
@@ -76,7 +76,11 @@ Surfaces: Scoreboard overlay · Banner overlay · Side panel feed · Chat · Ove
    - The red zone is the one exception.
    - Raising the delay freezes the display until it catches up. Lowering it releases a burst, which the banner coalesces into one summary.
    - A gain reversed inside the delay window (e.g. a TD overturned on review) cancels out and is never shown.
-6. **Corrections:** a point change with no matching stat change is a `CORRECTION`. A reversed TD that was already shown becomes "TD overturned", which is significant.
+6. **Stat attribution:** the stat feed and the scores don't always land in the same poll. A play's breakdown
+   uses the earliest stat snapshot (since that player's last released play) whose change is worth exactly
+   the play's points in the primary league. If none does yet, the play waits up to 15 s from when it was seen
+   (`DETAIL_GRACE_MS`, even with a shorter delay), then shows the closest breakdown with an `other ±x` line.
+7. **Corrections:** a point change with no matching stat change is a `CORRECTION`. A reversed TD that was already shown becomes "TD overturned", which is significant.
 
 ## Play taxonomy (Level 2 stat keys, verified against recorded data in Phase 2)
 
@@ -101,6 +105,7 @@ Each category has a sign and a significance. The tier is from **my** point of vi
 | | Yards-allowed tier change | – | BAD/GOOD |
 | IDP | Defensive TD (`idp_def_td`, INT/fumble return TD) | ✔ | SCORED |
 | | Sack, INT, forced fumble, fumble recovery, safety, blocked kick (`idp_sack`,`idp_int`,`idp_ff`,`idp_fum_rec`,`idp_safe`,`idp_blk_kick`) | ✔ | VERY_GOOD |
+| Special teams | Takeaway on a kick or punt (`def_st_ff`,`def_st_fum_rec` for team DEF; `st_ff`,`st_fum_rec` for players) | ✔ | VERY_GOOD |
 | | Tackle solo/assist, TFL, QB hit, pass defended (`idp_tkl_*`,`idp_qb_hit`,`idp_pass_def`) | – | GOOD |
 | Matchup | Lead change (I take the lead / lose it) | ✔ | VERY_GOOD / VERY_BAD |
 | | Matchup final (win / loss) | ✔ | SCORED / SCORED_ON |
@@ -122,10 +127,11 @@ Each category has a sign and a significance. The tier is from **my** point of vi
   - Delay: preset buttons **30 s / 60 s / 90 s / 120 s** that snap to that value, plus ±5 s buttons to fine-tune.
   - Mute toggle, which pauses banner, chat, overhead text and reactions; the feed continues.
   - Full feed of *every* delta (filters applied), newest first: time, `[ALIAS]`, player in owner colour, text, ±points.
-- **Scoreboard overlay** (delayed), one line per enabled league:
-  - Format: `RD  Layne (Team Name) 87.4 – 79.1 Opp (Team Name)  62%  3v2 left`: owner display name plus team name on each side.
-  - The score is green/red-free: the leader is shown by pink/red on the side ahead.
-  - Players left and win % need ESPN.
+- **Scoreboard overlay** (delayed), compact (small font, ~150 px), three lines per enabled league:
+  - `RD          62% · 3v2 left` (alias, then win % and starters left, each only when known; both need ESPN)
+  - `LBBurnsy   87.4` (my username in pink; my score **green while I lead**, neutral otherwise)
+  - `Opponent   79.1` (their username in red; their score **red while they lead**, neutral otherwise)
+  - Usernames only, no team names (changed 2026-10-11 after first use: the team-name version was too large).
 - **Banner overlay** (significant plays): fades after `bannerSeconds` (5). Shows the play and each league's impact. Coalesces bursts.
 - **Chat**: game message for significant plays (`chatMode`: off / significant / all). Format: `[RD] Hurts 12-yd TD run +7.2`.
 - **Overhead text** (significant plays) on the local player for about 3 s, e.g. `TOUCHDOWN Hurts!` / `Picked off…`.
@@ -147,6 +153,12 @@ Each category has a sign and a significance. The tier is from **my** point of vi
   - While a team with one of my or my opponent's starters (QB/RB/WR/TE/K) has the ball inside the 20, show a box such as `RED ZONE · PHI — Hurts, Brown [RD, DYN1]`. Mine in pink, the opponent's in red.
   - Players and team only: no down, distance, drive or how they got there.
   - It clears when possession changes or the ball leaves the red zone.
+  - ESPN quirks (seen live 2026-10-11): `situation` exists only while a game is in progress; `possession`
+    (an ESPN team id) is sent only while a snap is pending, and is missing at halftime, at dead balls and right
+    after a score, while `isRedZone` keeps its last value. So a trip **starts** only with `isRedZone` and
+    `possession` both present. Without possession the alert is held (no re-announce) for up to 90 s, but it
+    clears at once on halftime or when the game's score changes. A team's trip is announced in chat once;
+    the same team isn't announced again within 3 min.
   - One chat line on entry (toggle).
 
 ## Win % (Phase 5)
@@ -174,7 +186,8 @@ Computed from the delayed snapshot. It won't match the Sleeper app's number.
 - **SleeperScape repo** (`/home/user/SleeperScape`, branch `claude/sweet-ride-v0q9ki`):
   - Gradle project mirroring `ankiscape/build.gradle`: Java 11, `latest.release` RuneLite, Lombok, JUnit 4, `run` task.
   - `group = 'com.layneburns'`, `rootProject.name = 'sleeperscape'`.
-  - `SleeperScapePluginTest` loads only SleeperScape, so `./gradlew run` gives a fresh dev client. Use a separate RuneLite profile while developing.
+  - `SleeperScapePluginTest` loads only SleeperScape, so `./gradlew run` gives a fresh dev client. It uses the main RuneLite profile (with its Plugin Hub plugins); `gradlew run -Pprofile=sleeperscape-dev` uses a separate profile, created on first use.
+  - `.gitattributes` keeps `gradlew` LF and `*.bat` CRLF, so both work after a Windows checkout.
   - Also add `SPEC.md` (this plan, AnkiScape-style), `AGENTS.md` (copied from ankiscape), `CLAUDE.md` (`@AGENTS.md @SPEC.md`) and a BSD-2 `LICENSE`.
 - **ankiscape integration** (separate commit in `layne-burns/ankiscape`):
   - `settings.gradle` adds `includeBuild('../SleeperScape')`.
@@ -211,6 +224,12 @@ Computed from the delayed snapshot. It won't match the Sleeper app's number.
   - red zone appears instantly while plays are still delayed
   - everything survives a world hop and the login screen
   - recordings appear in `.runelite/plugin-data/sleeperscape/recordings/`
+
+## First live use (2026-10-11)
+
+- Local build against RuneLite 1.13.1 compiled with no fixes; core tests pass.
+- Confirmed live: `v1/state/nfl`; all three stats URLs; projections (`api.sleeper.com`, 5.7 MB array); the ESPN scoreboard.
+- `*_lng` stat keys exist (e.g. `fgm_lng`).
 
 ## Open items (resolved during phases)
 

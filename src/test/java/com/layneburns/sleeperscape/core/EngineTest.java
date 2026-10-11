@@ -77,6 +77,11 @@ public class EngineTest
 				entered.addAll(enteredNow);
 			}
 		});
+		setUpEngine();
+	}
+
+	private void setUpEngine()
+	{
 		Map<String, Sleeper.Player> players = new HashMap<>();
 		players.put(HURTS, player(HURTS, "Jalen", "Hurts", "QB", "PHI"));
 		players.put(KELCE, player(KELCE, "Travis", "Kelce", "TE", "KC"));
@@ -219,7 +224,8 @@ public class EngineTest
 		c.matchups.remove(DYN);
 		engine.ingest(c);
 		engine.ingest(cycle(21_000, 16, 5));
-		engine.tick(21_000);
+		// No stat line explains the points here, so the play waits out the detail grace.
+		engine.tick(11_000 + Engine.DETAIL_GRACE_MS);
 		assertEquals(1, released.size());
 		assertEquals(2, released.get(0).visible.size());
 	}
@@ -244,7 +250,7 @@ public class EngineTest
 	{
 		engine.ingest(cycle(1000, 10, 12));
 		engine.ingest(cycle(11_000, 14, 12));
-		engine.tick(11_000);
+		engine.tick(11_000 + Engine.DETAIL_GRACE_MS);
 		boolean lead = false;
 		for (PlayEvent e : released)
 		{
@@ -317,5 +323,133 @@ public class EngineTest
 		Double wp = v.lines.get(0).winProbability;
 		assertNotNull(wp);
 		assertEquals(1.0, wp, 1e-9);
+	}
+
+	private static Espn.Game game(boolean redZone, String possession, String score)
+	{
+		Espn.Game g = new Espn.Game();
+		g.id = "401";
+		g.state = "in";
+		g.home = "PHI";
+		g.away = "DAL";
+		g.possession = possession;
+		g.redZone = redZone;
+		g.score = score;
+		return g;
+	}
+
+	private Engine.Cycle withGame(Engine.Cycle c, Espn.Game g)
+	{
+		c.games = new HashMap<>();
+		c.games.put("PHI", g);
+		c.games.put("DAL", g);
+		return c;
+	}
+
+	@Test
+	public void redZoneHoldsWhilePossessionIsMissingButNotPastAScore()
+	{
+		engine.ingest(cycle(1000, 10, 5));
+		engine.ingest(withGame(cycle(11_000, 10, 5), game(true, "PHI", "0-7")));
+		assertEquals(1, entered.size());
+		// Dead ball: ESPN drops possession, isRedZone stays true. Still one alert, not re-announced.
+		engine.ingest(withGame(cycle(21_000, 10, 5), game(true, null, "0-7")));
+		engine.ingest(withGame(cycle(31_000, 10, 5), game(true, "PHI", "0-7")));
+		assertEquals(1, entered.size());
+		// Touchdown: score changes while possession is missing, so the alert clears.
+		engine.ingest(withGame(cycle(41_000, 16, 5), game(true, null, "0-13")));
+		// A new trip right away is not announced again (within the re-announce window).
+		engine.ingest(withGame(cycle(51_000, 16, 5), game(true, "PHI", "0-14")));
+		assertEquals(1, entered.size());
+	}
+
+	@Test
+	public void halftimeClearsTheRedZone()
+	{
+		final List<List<RedZoneAlert>> actives = new ArrayList<>();
+		engine = new Engine(new Engine.Settings()
+		{
+			public int delaySeconds()
+			{
+				return 0;
+			}
+
+			public boolean startersOnly()
+			{
+				return true;
+			}
+
+			public boolean includeOpponent()
+			{
+				return true;
+			}
+
+			public int bigPlayYards()
+			{
+				return 20;
+			}
+
+			public boolean leagueEnabled(String id)
+			{
+				return true;
+			}
+
+			public String leagueAlias(String id)
+			{
+				return id;
+			}
+		}, new Engine.Listener()
+		{
+			public void released(PlayEvent e)
+			{
+			}
+
+			public void updated(PlayEvent e)
+			{
+			}
+
+			public void redZone(List<RedZoneAlert> active, List<RedZoneAlert> enteredNow)
+			{
+				actives.add(active);
+			}
+		});
+		setUpEngine();
+		engine.ingest(withGame(cycle(1000, 10, 5), game(true, "PHI", "0-0")));
+		assertEquals(1, actives.get(actives.size() - 1).size());
+		Espn.Game half = game(true, null, "0-0");
+		half.halftime = true;
+		engine.ingest(withGame(cycle(11_000, 10, 5), half));
+		assertTrue(actives.get(actives.size() - 1).isEmpty());
+	}
+
+	@Test
+	public void statsArrivingAPollLateAreStillAttributedToTheRightPlay()
+	{
+		stat(HURTS, "pass_yd", 100);
+		engine.ingest(cycle(1000, 10, 5));
+		// Points move (a 10-yd completion, +0.4) but the stat feed still shows the old line.
+		engine.ingest(cycle(11_000, 10.4, 5));
+		engine.tick(11_500);
+		assertTrue("held for the stats", released.isEmpty());
+		// Next poll: the stats catch up, and the next play (+0.8) is already in the scores.
+		stat(HURTS, "pass_yd", 110);
+		engine.ingest(cycle(21_000, 11.2, 5));
+		stat(HURTS, "pass_yd", 130);
+		engine.ingest(cycle(31_000, 11.2, 5));
+		engine.tick(31_000);
+		assertEquals(2, released.size());
+		assertEquals("10 pass yd +0.4", released.get(0).detail());
+		assertEquals("20 pass yd +0.8", released.get(1).detail());
+	}
+
+	@Test
+	public void unexplainedPlaysAreReleasedAfterTheGrace()
+	{
+		engine.ingest(cycle(1000, 10, 5));
+		engine.ingest(cycle(11_000, 10.4, 5));
+		engine.tick(20_000);
+		assertTrue(released.isEmpty());
+		engine.tick(11_000 + Engine.DETAIL_GRACE_MS);
+		assertEquals(1, released.size());
 	}
 }

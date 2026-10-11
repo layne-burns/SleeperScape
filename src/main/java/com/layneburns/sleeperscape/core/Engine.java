@@ -689,11 +689,11 @@ public final class Engine
 	public View tick(long now)
 	{
 		long presentation = now - settings.delaySeconds() * 1000L;
-		Iterator<PlayEvent> it = pending.iterator();
-		List<PlayEvent> due = new ArrayList<>();
-		while (it.hasNext())
+		// One at a time, in order: releasing a play moves its player's stat cursor, which the next play's
+		// "explained yet?" check depends on.
+		while (!pending.isEmpty())
 		{
-			PlayEvent e = it.next();
+			PlayEvent e = pending.get(0);
 			if (e.observedAt > presentation)
 			{
 				break;
@@ -703,11 +703,7 @@ public final class Engine
 				// Keep the order: later plays wait behind this one.
 				break;
 			}
-			it.remove();
-			due.add(e);
-		}
-		for (PlayEvent e : due)
-		{
+			pending.remove(0);
 			release(e);
 		}
 		while (!recent.isEmpty() && recent.peekFirst().observedAt < now - KEEP_MS)
