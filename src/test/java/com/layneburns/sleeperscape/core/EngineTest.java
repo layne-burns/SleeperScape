@@ -507,6 +507,34 @@ public class EngineTest
 		assertEquals("Team 2", e.visible.get(1).ownerName);
 	}
 
+	@Test
+	public void espnYardsUpgradeARoutinePlayToABigPlayAtRelease()
+	{
+		stat(HURTS, "pass_cmp", 10);
+		stat(HURTS, "pass_yd", 100);
+		engine.ingest(withGame(cycle(1000, 10, 5), game(false, "PHI", "0-0")));
+		// ESPN's play-by-play describes the throw before the points land.
+		Espn.Play p = new Espn.Play();
+		p.id = "1";
+		p.sequence = 1;
+		p.text = "(10:12 - 2nd) J.Hurts pass deep right to A.Brown for 25 yards";
+		p.yards = 25;
+		engine.ingestPlays("401", Arrays.asList(p));
+		// Two completions for 25 yards in one poll: routine by the stat line alone (+1.0).
+		stat(HURTS, "pass_cmp", 12);
+		stat(HURTS, "pass_yd", 125);
+		engine.ingest(withGame(cycle(11_000, 11, 5), game(false, "PHI", "0-0")));
+		engine.tick(11_000);
+
+		assertEquals(1, released.size());
+		PlayEvent e = released.get(0);
+		assertEquals(p.text, e.playText);
+		assertEquals(Category.BIG_PLAY, e.top());
+		assertTrue(e.significant());
+		assertEquals(Tier.VERY_GOOD, e.visible.get(0).tier);
+		assertEquals(Tier.VERY_BAD, e.visible.get(1).tier);
+	}
+
 	private static Espn.Game espn(String id, String state, String home, String away)
 	{
 		Espn.Game g = new Espn.Game();

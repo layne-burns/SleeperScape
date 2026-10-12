@@ -839,11 +839,12 @@ public final class Engine
 
 	private void release(PlayEvent e)
 	{
-		e.released = true;
+		// Finalise first: the ESPN-yards big-play upgrade in matchPlay only applies to a play not yet shown.
 		if (!e.isMatchupEvent())
 		{
 			finalise(e);
 		}
+		e.released = true;
 		List<PlayEvent.Impact> visible = new ArrayList<>();
 		List<Tier> tiers = new ArrayList<>();
 		double netForMe = 0;
