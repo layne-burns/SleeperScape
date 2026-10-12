@@ -180,6 +180,23 @@ public class SleeperScapePlugin extends Plugin
 		}
 	}
 
+	/** Rediscovers leagues on the engine thread, after anything already queued there. */
+	private void restartPolling()
+	{
+		exec.execute(() ->
+		{
+			stopPolling();
+			state.view = View.EMPTY;
+			state.redZones = List.of();
+			SwingUtilities.invokeLater(() ->
+			{
+				panel.clearFeed();
+				panel.setSideOfBall(List.of());
+			});
+			startPolling();
+		});
+	}
+
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
@@ -195,19 +212,7 @@ public class SleeperScapePlugin extends Plugin
 		}
 		if (RESTART_KEYS.contains(event.getKey()))
 		{
-			// Rediscover leagues on the engine thread, after anything already queued there.
-			exec.execute(() ->
-			{
-				stopPolling();
-				state.view = View.EMPTY;
-				state.redZones = List.of();
-				SwingUtilities.invokeLater(() ->
-				{
-					panel.clearFeed();
-					panel.setSideOfBall(List.of());
-				});
-				startPolling();
-			});
+			restartPolling();
 		}
 		if ("muted".equals(event.getKey()) && config.muted())
 		{
@@ -291,6 +296,13 @@ public class SleeperScapePlugin extends Plugin
 		{
 			state.status = text;
 			SwingUtilities.invokeLater(() -> panel.setStatus(text));
+		}
+
+		@Override
+		public void weekChanged(int week)
+		{
+			status("Week " + week + ": reloading…");
+			restartPolling();
 		}
 
 		@Override

@@ -360,6 +360,6 @@ public interface SleeperScapeConfig extends Config
 	)
 	default boolean record()
 	{
-		return true;
+		return false;
 	}
 }
