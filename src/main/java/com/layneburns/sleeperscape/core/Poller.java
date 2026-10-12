@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ScheduledExecutorService;
@@ -348,11 +349,6 @@ public final class Poller
 			stateAt = now;
 			refreshState();
 		}
-		if (now - projectionsAt > (live ? PROJECTIONS_EVERY_MS : PROJECTIONS_IDLE_MS))
-		{
-			projectionsAt = now;
-			fetchProjections();
-		}
 		if (statUrl != 0 && now - statUrlFailedAt > STAT_URL_RETRY_MS)
 		{
 			// A failure moved us to a fallback (the last one lags the live scores): go back to the preferred one.
@@ -388,7 +384,7 @@ public final class Poller
 				}
 				try
 				{
-					c.stats = Stats.parse(gson, json);
+					c.stats = Stats.parse(json, engine.statFilter());
 				}
 				catch (RuntimeException e)
 				{
@@ -435,6 +431,14 @@ public final class Poller
 				if (config.useEspn())
 				{
 					fetchPlays(now);
+				}
+				// After the ingest, so the first fetch already knows which players' projections to keep; a roster
+				// change that adds a player refreshes early (at most once a minute).
+				long projectionsEvery = live ? PROJECTIONS_EVERY_MS : PROJECTIONS_IDLE_MS;
+				if (now - projectionsAt > projectionsEvery || (engine.projectionsStale() && now - projectionsAt > 60_000))
+				{
+					projectionsAt = now;
+					fetchProjections();
 				}
 			}
 			catch (RuntimeException e)
@@ -502,7 +506,8 @@ public final class Poller
 			}
 			try
 			{
-				engine.setProjections(Stats.parse(gson, json));
+				Set<String> only = engine.statFilter();
+				engine.setProjections(Stats.parse(json, only), only);
 			}
 			catch (RuntimeException e)
 			{

@@ -8,6 +8,7 @@ import static org.junit.Assert.assertTrue;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import org.junit.Before;
@@ -196,6 +197,39 @@ public class EngineTest
 		engine.ingest(c);
 		assertTrue(engine.anyGameLive(610_000 + Engine.LIVE_WINDOW_MS - 1));
 		assertFalse(engine.anyGameLive(610_000 + Engine.LIVE_WINDOW_MS));
+	}
+
+	@Test
+	public void statFilterIsMyAndMyOpponentsPlayersAcrossLeagues()
+	{
+		assertNull(engine.statFilter());
+		Engine.Cycle c = cycle(1000, 10, 5);
+		List<Sleeper.Matchup> rows = new ArrayList<>(c.matchups.get(RD));
+		Sleeper.Matchup other = row(3, "9999", 3.5, 3.5);
+		other.matchup_id = 2;
+		rows.add(other);
+		c.matchups.put(RD, rows);
+		engine.ingest(c);
+		assertEquals(new HashSet<>(Arrays.asList(HURTS, KELCE)), engine.statFilter());
+		// A league whose matchups failed keeps its players watched.
+		Engine.Cycle c2 = cycle(11_000, 10, 5);
+		c2.matchups.remove(DYN);
+		engine.ingest(c2);
+		assertEquals(new HashSet<>(Arrays.asList(HURTS, KELCE)), engine.statFilter());
+	}
+
+	@Test
+	public void playerFirstSeenAfterTheBaselineGetsTheirWholeLineAsThePlay()
+	{
+		stat(HURTS, "pass_yd", 100);
+		engine.ingest(cycle(1000, 10, 5));
+		// Kelce's game starts later: his first line is his first play.
+		stat(KELCE, "rec", 1);
+		stat(KELCE, "rec_yd", 12);
+		engine.ingest(cycle(11_000, 10, 7.2));
+		engine.tick(11_000);
+		assertEquals(1, released.size());
+		assertEquals("12 rec yd +1.2 · 1 rec +1", released.get(0).detail());
 	}
 
 	@Test

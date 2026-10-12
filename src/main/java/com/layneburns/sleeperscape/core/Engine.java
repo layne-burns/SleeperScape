@@ -147,6 +147,11 @@ public final class Engine
 	private final Map<String, Integer> leadSign = new HashMap<>();
 	private final Set<String> finalSeen = new HashSet<>();
 
+	/** My and my opponent's players per league, from the matchups: the only ones whose stats matter. */
+	private final Map<String, Set<String>> watchedByLeague = new HashMap<>();
+	private Set<String> watched = Collections.emptySet();
+	/** The filter the projections were parsed with, or null for every player. */
+	private Set<String> projectionsFor;
 	private final Map<String, ArrayDeque<StatSnap>> statHistory = new HashMap<>();
 	private final Map<String, Map<String, Double>> latestStats = new HashMap<>();
 	private final Map<String, Map<String, Double>> statCursor = new HashMap<>();
@@ -196,11 +201,33 @@ public final class Engine
 
 	public void setProjections(Map<String, Map<String, Double>> p)
 	{
+		setProjections(p, null);
+	}
+
+	/** @param filter the players the projections were parsed for (see {@link #statFilter()}), or null for all */
+	public void setProjections(Map<String, Map<String, Double>> p, Set<String> filter)
+	{
 		projections.clear();
 		if (p != null)
 		{
 			projections.putAll(p);
 		}
+		projectionsFor = filter;
+	}
+
+	/** Whether the projections were parsed for a player set that no longer covers every watched player. */
+	public boolean projectionsStale()
+	{
+		return projectionsFor != null && !projectionsFor.containsAll(watched);
+	}
+
+	/**
+	 * Players whose stat lines and projections matter (my and my opponent's rosters in every league), for
+	 * {@link Stats#parse(String, Set)}; null before the first matchups, meaning parse everyone.
+	 */
+	public Set<String> statFilter()
+	{
+		return watched.isEmpty() ? null : watched;
 	}
 
 	/**
@@ -229,6 +256,27 @@ public final class Engine
 	public void ingest(Cycle c)
 	{
 		long t = c.observedAt;
+		Map<String, LeagueFrame> polled = new HashMap<>();
+		for (Map.Entry<String, List<Sleeper.Matchup>> e : c.matchups.entrySet())
+		{
+			LeagueContext ctx = leagues.get(e.getKey());
+			if (ctx != null && e.getValue() != null)
+			{
+				LeagueFrame lf = leagueFrame(ctx, e.getValue());
+				polled.put(ctx.id(), lf);
+				watchedByLeague.put(ctx.id(), watchedPlayers(ctx, e.getValue(), lf.oppRosterId));
+			}
+		}
+		if (!polled.isEmpty())
+		{
+			// A league whose matchups failed this cycle keeps its last set.
+			Set<String> all = new HashSet<>();
+			for (Set<String> ids : watchedByLeague.values())
+			{
+				all.addAll(ids);
+			}
+			watched = Collections.unmodifiableSet(all);
+		}
 		if (c.stats != null)
 		{
 			ingestStats(t, c.stats);
@@ -256,7 +304,7 @@ public final class Engine
 				continue;
 			}
 			String leagueId = ctx.id();
-			LeagueFrame lf = leagueFrame(ctx, e.getValue());
+			LeagueFrame lf = polled.get(leagueId);
 			frameLeagues.put(leagueId, lf);
 
 			Map<String, Double> prev = lastPoints.get(leagueId);
@@ -340,18 +388,19 @@ public final class Engine
 		pending.sort((a, b) -> Long.compare(a.observedAt, b.observedAt));
 	}
 
+	/** Watched players only: thousands of NFL players have a line each week, a few hundred can show up here. */
 	private void ingestStats(long t, Map<String, Map<String, Double>> stats)
 	{
-		for (Map.Entry<String, Map<String, Double>> e : stats.entrySet())
+		for (String pid : watched)
 		{
-			String pid = e.getKey();
-			Map<String, Double> s = e.getValue();
-			if (!statsBaselined)
+			Map<String, Double> s = stats.get(pid);
+			if (!statCursor.containsKey(pid))
 			{
-				statCursor.put(pid, s);
+				// First seen: the line as it stands (nothing, before their game) is this player's baseline.
+				statCursor.put(pid, s == null ? Collections.emptyMap() : s);
 				statCursorAt.put(pid, t);
 			}
-			if (!Objects.equals(latestStats.get(pid), s))
+			if (s != null && !Objects.equals(latestStats.get(pid), s))
 			{
 				latestStats.put(pid, s);
 				ArrayDeque<StatSnap> h = statHistory.computeIfAbsent(pid, k -> new ArrayDeque<>());
@@ -362,7 +411,36 @@ public final class Engine
 				}
 			}
 		}
-		statsBaselined = true;
+		if (!watched.isEmpty())
+		{
+			statsBaselined = true;
+		}
+	}
+
+	/** Every player (bench included) on my roster and my opponent's; other owners' plays are never shown. */
+	private static Set<String> watchedPlayers(LeagueContext ctx, List<Sleeper.Matchup> rows, int oppRosterId)
+	{
+		Set<String> out = new HashSet<>();
+		for (Sleeper.Matchup row : rows)
+		{
+			if (ctx.owner(row.roster_id, oppRosterId) == Owner.OTHER)
+			{
+				continue;
+			}
+			if (row.players != null)
+			{
+				out.addAll(row.players);
+			}
+			if (row.starters != null)
+			{
+				out.addAll(row.starters);
+			}
+			if (row.players_points != null)
+			{
+				out.addAll(row.players_points.keySet());
+			}
+		}
+		return out;
 	}
 
 	private LeagueFrame leagueFrame(LeagueContext ctx, List<Sleeper.Matchup> rows)
