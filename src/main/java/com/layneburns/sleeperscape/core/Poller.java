@@ -78,6 +78,8 @@ public final class Poller
 	private static final long STATE_EVERY_MS = 3600_000L;
 	/** After a stats URL fails, how long to stay on the next one before trying the preferred one again. */
 	private static final long STAT_URL_RETRY_MS = 5 * 60_000L;
+	/** A game's ESPN summary (hundreds of KB) is fetched at most this often, however many plays wait on it. */
+	private static final long SUMMARY_EVERY_MS = 15_000;
 	// All three answer (confirmed 2026-10-11), but during live games the lean v1 one (~270 KB keyed by player)
 	// left almost every play without a stat line, so it looks cached; the ~1.3 MB arrays kept up. Fresh first.
 	private static final String[] STAT_URLS = {
@@ -115,6 +117,7 @@ public final class Poller
 	private long rostersAt;
 	private long stateAt;
 	private long initStartedAt;
+	private final Map<String, Long> summaryAt = new HashMap<>();
 	private boolean firstCycleDone;
 	private long statsParseNs;
 
@@ -548,8 +551,16 @@ public final class Poller
 
 	private void fetchPlays(long now)
 	{
-		for (String gameId : engine.gamesWanted(now))
+		Set<String> wanted = engine.gamesWanted(now);
+		summaryAt.keySet().retainAll(wanted);
+		for (String gameId : wanted)
 		{
+			Long last = summaryAt.get(gameId);
+			if (last != null && now - last < SUMMARY_EVERY_MS)
+			{
+				continue;
+			}
+			summaryAt.put(gameId, now);
 			http.get(Espn.summaryUrl(gameId)).thenAcceptAsync(json ->
 			{
 				if (!stopped)
