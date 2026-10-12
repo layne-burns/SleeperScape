@@ -1,12 +1,16 @@
 package com.layneburns.sleeperscape.core;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 import com.google.gson.Gson;
+import com.google.gson.JsonSyntaxException;
+import com.google.gson.stream.JsonReader;
+import com.google.gson.stream.JsonToken;
+import java.io.EOFException;
+import java.io.IOException;
+import java.io.StringReader;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Per-player stat lines (from the unofficial stats and projections endpoints) and how a league scores them.
@@ -22,57 +26,147 @@ public final class Stats
 
 	public static Map<String, Map<String, Double>> parse(Gson gson, String json)
 	{
+		return parse(json, null);
+	}
+
+	/**
+	 * Streams the JSON rather than building a tree: the stats array runs to ~1.3 MB and the projections to
+	 * several MB, every poll, for thousands of players.
+	 *
+	 * @param only the player ids to keep, or null for every player; other players' lines are skipped unread
+	 */
+	public static Map<String, Map<String, Double>> parse(String json, Set<String> only)
+	{
 		Map<String, Map<String, Double>> out = new HashMap<>();
-		JsonElement root = gson.fromJson(json, JsonElement.class);
-		if (root == null)
+		if (json == null)
 		{
 			return out;
 		}
-		if (root.isJsonArray())
+		try (JsonReader r = new JsonReader(new StringReader(json)))
 		{
-			JsonArray rows = root.getAsJsonArray();
-			for (JsonElement row : rows)
+			r.setLenient(true);
+			JsonToken root = r.peek();
+			if (root == JsonToken.BEGIN_ARRAY)
 			{
-				if (!row.isJsonObject())
+				r.beginArray();
+				while (r.hasNext())
 				{
-					continue;
+					if (r.peek() == JsonToken.BEGIN_OBJECT)
+					{
+						row(r, only, out);
+					}
+					else
+					{
+						r.skipValue();
+					}
 				}
-				JsonObject o = row.getAsJsonObject();
-				JsonElement id = o.get("player_id");
-				JsonElement stats = o.get("stats");
-				if (id != null && id.isJsonPrimitive() && stats != null && stats.isJsonObject())
+				r.endArray();
+			}
+			else if (root == JsonToken.BEGIN_OBJECT)
+			{
+				r.beginObject();
+				while (r.hasNext())
 				{
-					out.put(id.getAsString(), numbers(stats.getAsJsonObject()));
+					String pid = r.nextName();
+					if (r.peek() == JsonToken.BEGIN_OBJECT && (only == null || only.contains(pid)))
+					{
+						out.put(pid, line(r));
+					}
+					else
+					{
+						r.skipValue();
+					}
 				}
+				r.endObject();
 			}
 		}
-		else if (root.isJsonObject())
+		catch (EOFException e)
 		{
-			for (Map.Entry<String, JsonElement> e : root.getAsJsonObject().entrySet())
-			{
-				if (!e.getValue().isJsonObject())
-				{
-					continue;
-				}
-				JsonObject o = e.getValue().getAsJsonObject();
-				JsonElement stats = o.get("stats");
-				out.put(e.getKey(), numbers(stats != null && stats.isJsonObject() ? stats.getAsJsonObject() : o));
-			}
+			// An empty body: nothing, as before.
+		}
+		catch (IOException | IllegalStateException e)
+		{
+			throw new JsonSyntaxException(e);
 		}
 		return out;
 	}
 
-	private static Map<String, Double> numbers(JsonObject o)
+	/** One {@code {player_id, stats: {...}, ...}} row; the id may come after the stats, so both are read. */
+	private static void row(JsonReader r, Set<String> only, Map<String, Map<String, Double>> out) throws IOException
 	{
-		Map<String, Double> m = new HashMap<>();
-		for (Map.Entry<String, JsonElement> e : o.entrySet())
+		String pid = null;
+		Map<String, Double> stats = null;
+		boolean skip = false;
+		r.beginObject();
+		while (r.hasNext())
 		{
-			JsonElement v = e.getValue();
-			if (v.isJsonPrimitive() && v.getAsJsonPrimitive().isNumber())
+			String k = r.nextName();
+			JsonToken t = r.peek();
+			if (k.equals("player_id") && (t == JsonToken.STRING || t == JsonToken.NUMBER))
 			{
-				m.put(e.getKey(), v.getAsDouble());
+				pid = r.nextString();
+				skip = only != null && !only.contains(pid);
+			}
+			else if (k.equals("stats") && t == JsonToken.BEGIN_OBJECT && !skip)
+			{
+				stats = numbers(r);
+			}
+			else
+			{
+				r.skipValue();
 			}
 		}
+		r.endObject();
+		if (pid != null && stats != null && !skip)
+		{
+			out.put(pid, stats);
+		}
+	}
+
+	/** A value of the keyed shape: the stat map itself, or {@code {stats: {...}}}. */
+	private static Map<String, Double> line(JsonReader r) throws IOException
+	{
+		Map<String, Double> flat = new HashMap<>();
+		Map<String, Double> nested = null;
+		r.beginObject();
+		while (r.hasNext())
+		{
+			String k = r.nextName();
+			JsonToken t = r.peek();
+			if (t == JsonToken.NUMBER)
+			{
+				flat.put(k, r.nextDouble());
+			}
+			else if (k.equals("stats") && t == JsonToken.BEGIN_OBJECT)
+			{
+				nested = numbers(r);
+			}
+			else
+			{
+				r.skipValue();
+			}
+		}
+		r.endObject();
+		return nested != null ? nested : flat;
+	}
+
+	private static Map<String, Double> numbers(JsonReader r) throws IOException
+	{
+		Map<String, Double> m = new HashMap<>();
+		r.beginObject();
+		while (r.hasNext())
+		{
+			String k = r.nextName();
+			if (r.peek() == JsonToken.NUMBER)
+			{
+				m.put(k, r.nextDouble());
+			}
+			else
+			{
+				r.skipValue();
+			}
+		}
+		r.endObject();
 		return m;
 	}
 

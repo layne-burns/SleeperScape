@@ -6,20 +6,25 @@ import java.lang.reflect.Type;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Drives the network side: discovers leagues once, then polls each cycle and feeds the {@link Engine}.
  * Everything runs on the single engine executor; HTTP completes on the fetcher's threads and hops back.
  */
+@Slf4j
 public final class Poller
 {
 	public interface Config
@@ -35,13 +40,18 @@ public final class Poller
 		int weekOverride();
 	}
 
-	/** Disk cache for the (large) Sleeper player list. */
+	/** Disk cache for the (large) Sleeper player list, and the trimmed map parsed from it, kept across pollers. */
 	public interface PlayersCache
 	{
 		/** The cached JSON if younger than maxAgeMs, else null. */
 		String read(long maxAgeMs);
 
 		void write(String json);
+
+		/** The map parsed by an earlier poller from JSON that is still fresh, else null. */
+		Map<String, Sleeper.Player> parsed();
+
+		void parsed(Map<String, Sleeper.Player> players);
 	}
 
 	public interface Status
@@ -68,6 +78,8 @@ public final class Poller
 	private static final long STATE_EVERY_MS = 3600_000L;
 	/** After a stats URL fails, how long to stay on the next one before trying the preferred one again. */
 	private static final long STAT_URL_RETRY_MS = 5 * 60_000L;
+	/** A game's ESPN summary (hundreds of KB) is fetched at most this often, however many plays wait on it. */
+	private static final long SUMMARY_EVERY_MS = 15_000;
 	// All three answer (confirmed 2026-10-11), but during live games the lean v1 one (~270 KB keyed by player)
 	// left almost every play without a stat line, so it looks cached; the ~1.3 MB arrays kept up. Fresh first.
 	private static final String[] STAT_URLS = {
@@ -104,6 +116,10 @@ public final class Poller
 	private long projectionsAt;
 	private long rostersAt;
 	private long stateAt;
+	private long initStartedAt;
+	private final Map<String, Long> summaryAt = new HashMap<>();
+	private boolean firstCycleDone;
+	private long statsParseNs;
 
 	public Poller(Fetcher http, Gson gson, ScheduledExecutorService exec, Engine engine, Config config,
 		PlayersCache playersCache, Status status)
@@ -177,6 +193,7 @@ public final class Poller
 			return;
 		}
 		status.status("Loading Sleeper…");
+		initStartedAt = System.nanoTime();
 		get(BASE + "state/nfl", Sleeper.State.class)
 			.thenCompose(state ->
 			{
@@ -204,7 +221,7 @@ public final class Poller
 				return mine.thenCompose(this::addExtraLeagues);
 			})
 			.thenCompose(this::loadContexts)
-			.thenCompose(contexts -> loadPlayers().thenApply(p ->
+			.thenCompose(contexts -> loadPlayers(contexts).thenApply(p ->
 			{
 				engine.setPlayers(p);
 				engine.setLeagues(contexts);
@@ -226,6 +243,7 @@ public final class Poller
 				stateAt = rostersAt;
 				status.leaguesLoaded(contexts);
 				status.status(contexts.size() + " leagues, week " + week);
+				log.debug("init: {} leagues, week {} in {} ms", contexts.size(), week, (System.nanoTime() - initStartedAt) / 1_000_000);
 				cycle();
 			}, exec);
 	}
@@ -282,15 +300,23 @@ public final class Poller
 		});
 	}
 
-	private CompletableFuture<Map<String, Sleeper.Player>> loadPlayers()
+	private CompletableFuture<Map<String, Sleeper.Player>> loadPlayers(List<LeagueContext> contexts)
 	{
+		Set<String> rostered = rostered(contexts);
+		Map<String, Sleeper.Player> held = playersCache.parsed();
+		if (held != null && held.keySet().containsAll(rostered))
+		{
+			// A restart (config change, new week): the map parsed earlier still covers every rostered player.
+			log.debug("players: reusing {} parsed earlier", held.size());
+			return CompletableFuture.completedFuture(held);
+		}
 		String cached = playersCache.read(PLAYERS_MAX_AGE_MS);
 		if (cached != null)
 		{
 			try
 			{
-				Map<String, Sleeper.Player> p = gson.fromJson(cached, PLAYERS);
-				if (p != null && !p.isEmpty())
+				Map<String, Sleeper.Player> p = parsePlayers(cached, rostered);
+				if (!p.isEmpty())
 				{
 					return CompletableFuture.completedFuture(p);
 				}
@@ -303,10 +329,48 @@ public final class Poller
 		status.status("Downloading the NFL player list (once a day)…");
 		return http.get(BASE + "players/nfl").thenApplyAsync(json ->
 		{
-			Map<String, Sleeper.Player> p = gson.fromJson(json, PLAYERS);
 			playersCache.write(json);
-			return p;
+			return parsePlayers(json, rostered);
 		}, exec);
+	}
+
+	/** Parses the ~5 MB list (every NFL player ever, ~11k) and keeps the few thousand who can matter. */
+	private Map<String, Sleeper.Player> parsePlayers(String json, Set<String> rostered)
+	{
+		long t0 = System.nanoTime();
+		Map<String, Sleeper.Player> all = gson.fromJson(json, PLAYERS);
+		long parsedAt = System.nanoTime();
+		Map<String, Sleeper.Player> kept = all == null ? new HashMap<>() : trim(all, rostered);
+		playersCache.parsed(kept);
+		log.debug("players: parsed {} ({} KB) in {} ms, kept {} in {} ms", all == null ? 0 : all.size(), json.length() / 1024,
+			(parsedAt - t0) / 1_000_000, kept.size(), (System.nanoTime() - parsedAt) / 1_000_000);
+		return kept;
+	}
+
+	/** Players on an NFL team, plus anyone on a loaded league's roster (a cut player can stay rostered). */
+	static Map<String, Sleeper.Player> trim(Map<String, Sleeper.Player> all, Set<String> rostered)
+	{
+		Map<String, Sleeper.Player> kept = new HashMap<>();
+		for (Map.Entry<String, Sleeper.Player> e : all.entrySet())
+		{
+			Sleeper.Player p = e.getValue();
+			if (p != null && (p.team != null || rostered.contains(e.getKey())))
+			{
+				kept.put(e.getKey(), p);
+			}
+		}
+		return kept;
+	}
+
+	/** Every player on any roster of the loaded leagues (not just mine: the opponent changes weekly). */
+	private static Set<String> rostered(List<LeagueContext> contexts)
+	{
+		Set<String> ids = new HashSet<>();
+		for (LeagueContext c : contexts)
+		{
+			ids.addAll(c.rosteredPlayers());
+		}
+		return ids;
 	}
 
 	private void refreshRosters()
@@ -348,11 +412,6 @@ public final class Poller
 			stateAt = now;
 			refreshState();
 		}
-		if (now - projectionsAt > (live ? PROJECTIONS_EVERY_MS : PROJECTIONS_IDLE_MS))
-		{
-			projectionsAt = now;
-			fetchProjections();
-		}
 		if (statUrl != 0 && now - statUrlFailedAt > STAT_URL_RETRY_MS)
 		{
 			// A failure moved us to a fallback (the last one lags the live scores): go back to the preferred one.
@@ -388,7 +447,9 @@ public final class Poller
 				}
 				try
 				{
-					c.stats = Stats.parse(gson, json);
+					long t0 = System.nanoTime();
+					c.stats = Stats.parse(json, engine.statFilter());
+					statsParseNs = System.nanoTime() - t0;
 				}
 				catch (RuntimeException e)
 				{
@@ -432,9 +493,23 @@ public final class Poller
 					status.status(null);
 				}
 				engine.ingest(c);
+				if (!firstCycleDone)
+				{
+					firstCycleDone = true;
+					log.debug("first cycle: {} ms ({} leagues, stats {}, scoreboard {}, stats parse {} ms)",
+						System.currentTimeMillis() - now, c.matchups.size(), c.stats != null, c.games != null, statsParseNs / 1_000_000);
+				}
 				if (config.useEspn())
 				{
 					fetchPlays(now);
+				}
+				// After the ingest, so the first fetch already knows which players' projections to keep; a roster
+				// change that adds a player refreshes early (at most once a minute).
+				long projectionsEvery = live ? PROJECTIONS_EVERY_MS : PROJECTIONS_IDLE_MS;
+				if (now - projectionsAt > projectionsEvery || (engine.projectionsStale() && now - projectionsAt > 60_000))
+				{
+					projectionsAt = now;
+					fetchProjections();
 				}
 			}
 			catch (RuntimeException e)
@@ -476,8 +551,16 @@ public final class Poller
 
 	private void fetchPlays(long now)
 	{
-		for (String gameId : engine.gamesWanted(now))
+		Set<String> wanted = engine.gamesWanted(now);
+		summaryAt.keySet().retainAll(wanted);
+		for (String gameId : wanted)
 		{
+			Long last = summaryAt.get(gameId);
+			if (last != null && now - last < SUMMARY_EVERY_MS)
+			{
+				continue;
+			}
+			summaryAt.put(gameId, now);
 			http.get(Espn.summaryUrl(gameId)).thenAcceptAsync(json ->
 			{
 				if (!stopped)
@@ -502,7 +585,8 @@ public final class Poller
 			}
 			try
 			{
-				engine.setProjections(Stats.parse(gson, json));
+				Set<String> only = engine.statFilter();
+				engine.setProjections(Stats.parse(json, only), only);
 			}
 			catch (RuntimeException e)
 			{

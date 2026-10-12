@@ -1,8 +1,10 @@
 package com.layneburns.sleeperscape.core;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** One league as loaded at start: settings, rosters, owners, and which roster is mine. */
 public final class LeagueContext
@@ -53,6 +55,26 @@ public final class LeagueContext
 	public Map<String, Double> scoring()
 	{
 		return league.scoring_settings;
+	}
+
+	/** Every player on any roster in this league (starters included; empty slots, "0", left out). */
+	public Set<String> rosteredPlayers()
+	{
+		Set<String> ids = new HashSet<>();
+		for (Sleeper.Roster r : rosters.values())
+		{
+			if (r.players != null)
+			{
+				ids.addAll(r.players);
+			}
+			if (r.starters != null)
+			{
+				ids.addAll(r.starters);
+			}
+		}
+		ids.remove("0");
+		ids.remove(null);
+		return ids;
 	}
 
 	/** The owner's display name, e.g. "layneburns". */

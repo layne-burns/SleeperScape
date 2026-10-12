@@ -130,9 +130,10 @@ class BannerOverlay extends OverlayPanel
 		{
 			panelComponent.getChildren().add(LineComponent.builder().left(detail).leftColor(Colors.NEUTRAL).build());
 		}
-		if (e.playText != null && !e.breakdown().isEmpty())
+		String breakdown = e.playText != null ? e.breakdown() : "";
+		if (!breakdown.isEmpty())
 		{
-			panelComponent.getChildren().add(LineComponent.builder().left(e.breakdown()).leftColor(Colors.MUTED).build());
+			panelComponent.getChildren().add(LineComponent.builder().left(breakdown).leftColor(Colors.MUTED).build());
 		}
 		for (PlayEvent.Impact i : e.visible)
 		{

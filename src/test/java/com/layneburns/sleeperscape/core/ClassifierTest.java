@@ -9,6 +9,7 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.Test;
 
 public class ClassifierTest
@@ -122,6 +123,15 @@ public class ClassifierTest
 		Map<String, Map<String, Double>> b = Stats.parse(gson, "{\"6904\":{\"rush_yd\":12},\"1466\":{\"stats\":{\"rec\":3}}}");
 		assertEquals(12, b.get("6904").get("rush_yd"), 1e-9);
 		assertEquals(3, b.get("1466").get("rec"), 1e-9);
+		// Filtered: only the wanted players, whether the id comes before or after the stats.
+		Map<String, Map<String, Double>> c = Stats.parse("[{\"stats\":{\"rec\":2,\"team\":\"KC\"},\"player_id\":\"1466\"},"
+			+ "{\"player_id\":\"6904\",\"stats\":{\"rec\":9}},{\"player_id\":\"1\",\"stats\":{\"rec\":1}}]", Set.of("1466", "6904"));
+		assertEquals(Set.of("1466", "6904"), c.keySet());
+		assertEquals(2, c.get("1466").get("rec"), 1e-9);
+		assertEquals(1, c.get("1466").size());
+		Map<String, Map<String, Double>> d = Stats.parse("{\"6904\":{\"rush_yd\":12},\"1466\":{\"stats\":{\"rec\":3}}}", Set.of("1466"));
+		assertEquals(Set.of("1466"), d.keySet());
+		assertTrue(Stats.parse("", null).isEmpty());
 	}
 
 	@Test

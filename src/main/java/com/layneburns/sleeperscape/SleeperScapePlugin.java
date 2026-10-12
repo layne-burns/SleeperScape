@@ -8,6 +8,7 @@ import com.layneburns.sleeperscape.core.PlayEvent;
 import com.layneburns.sleeperscape.core.Poller;
 import com.layneburns.sleeperscape.core.RedZoneAlert;
 import com.layneburns.sleeperscape.core.SideOfBall;
+import com.layneburns.sleeperscape.core.Sleeper;
 import com.layneburns.sleeperscape.core.View;
 import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
@@ -102,6 +103,7 @@ public class SleeperScapePlugin extends Plugin
 	private SleeperScapePanel panel;
 	private NavigationButton navButton;
 	private Recorder recorder;
+	private PlayersCache playersCache;
 	private ScheduledExecutorService exec;
 	private Poller poller;
 	/** The frame the side panel's Starters tab last showed; -1 forces a redraw. */
@@ -112,6 +114,7 @@ public class SleeperScapePlugin extends Plugin
 	{
 		settings = new Settings(config, configManager);
 		recorder = new Recorder(gson, () -> getPluginDirectory().join("recordings"), config::record);
+		playersCache = new PlayersCache();
 		exec = Executors.newSingleThreadScheduledExecutor(r ->
 		{
 			Thread t = new Thread(r, "sleeperscape");
@@ -166,7 +169,7 @@ public class SleeperScapePlugin extends Plugin
 	private void startPolling()
 	{
 		Engine engine = new Engine(settings, new EngineEvents());
-		poller = new Poller(new HttpFetcher(okHttpClient, recorder), gson, exec, engine, settings, new PlayersCache(),
+		poller = new Poller(new HttpFetcher(okHttpClient, recorder), gson, exec, engine, settings, playersCache,
 			new PollerEvents());
 		poller.start();
 	}
@@ -330,9 +333,31 @@ public class SleeperScapePlugin extends Plugin
 		}
 	}
 
-	/** The day-old Sleeper player list, in the plugin's data folder. */
+	/**
+	 * The day-old Sleeper player list, in the plugin's data folder, and the trimmed map parsed from it, held
+	 * across pollers so a restart (config change, new week) doesn't parse the 5 MB again.
+	 */
 	private class PlayersCache implements Poller.PlayersCache
 	{
+		private static final long MAX_AGE_MS = 24 * 3600_000L;
+		private volatile Map<String, Sleeper.Player> parsed;
+		private volatile long parsedJsonAt;
+		/** When the JSON last read or written was fetched (the file's mtime). */
+		private long jsonAt;
+
+		@Override
+		public Map<String, Sleeper.Player> parsed()
+		{
+			return parsed != null && System.currentTimeMillis() - parsedJsonAt <= MAX_AGE_MS ? parsed : null;
+		}
+
+		@Override
+		public void parsed(Map<String, Sleeper.Player> players)
+		{
+			parsedJsonAt = jsonAt;
+			parsed = players;
+		}
+
 		@Override
 		public String read(long maxAgeMs)
 		{
@@ -351,6 +376,7 @@ public class SleeperScapePlugin extends Plugin
 					{
 						sb.append(buf, 0, n);
 					}
+					jsonAt = f.getLastModifiedTime().toMillis();
 					return sb.toString();
 				}
 			}
@@ -370,6 +396,7 @@ public class SleeperScapePlugin extends Plugin
 				Filepath tmp = dir.join("players.json.tmp");
 				tmp.write(json, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
 				tmp.moveTo(dir.join("players.json"), StandardCopyOption.REPLACE_EXISTING);
+				jsonAt = System.currentTimeMillis();
 			}
 			catch (IOException e)
 			{
