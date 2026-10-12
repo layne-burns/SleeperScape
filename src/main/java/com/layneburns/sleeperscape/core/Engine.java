@@ -116,6 +116,8 @@ public final class Engine
 
 	/** A gap longer than this between polls of a league (sleep, network loss) re-baselines it. */
 	static final long GAP_MS = 120_000;
+	/** Without ESPN, games count as live while any league's points moved within this long. */
+	static final long LIVE_WINDOW_MS = 5 * 60_000;
 	/** A league that reports the same play a poll late joins the earlier event within this window. */
 	static final long MERGE_MS = 30_000;
 	/** Frames and stat history older than the longest delay plus this are dropped. */
@@ -155,6 +157,8 @@ public final class Engine
 	private final ArrayDeque<PlayEvent> recent = new ArrayDeque<>();
 	private final ArrayDeque<Frame> frames = new ArrayDeque<>();
 	private Map<String, Espn.Game> liveGames;
+	/** When any league's points last changed between polls; 0 until the first poll. */
+	private long lastPointsChangeAt;
 
 	private final Map<String, List<Espn.Play>> playsByGame = new HashMap<>();
 	private final Map<String, Long> lastMatchedSeq = new HashMap<>();
@@ -199,20 +203,25 @@ public final class Engine
 		}
 	}
 
-	public boolean anyGameLive()
+	/**
+	 * Whether to poll at the live rate. With ESPN data, whether any game is in progress; without it, whether
+	 * Sleeper's points moved within {@link #LIVE_WINDOW_MS} (so a client left open all week idles, and the
+	 * first scoring play of a game day brings the rate back up). Before the first poll, true.
+	 */
+	public boolean anyGameLive(long now)
 	{
-		if (liveGames == null)
+		if (liveGames != null)
 		{
-			return true;
-		}
-		for (Espn.Game g : liveGames.values())
-		{
-			if (g.live())
+			for (Espn.Game g : liveGames.values())
 			{
-				return true;
+				if (g.live())
+				{
+					return true;
+				}
 			}
+			return false;
 		}
-		return false;
+		return lastPointsChangeAt == 0 || now - lastPointsChangeAt < LIVE_WINDOW_MS;
 	}
 
 	// ---- ingest ----
@@ -266,7 +275,13 @@ public final class Engine
 					double pts = p.getValue() == null ? 0 : p.getValue();
 					cur.put(p.getKey(), pts);
 					Double before = prev == null ? null : prev.get(p.getKey());
-					if (before == null || owner == Owner.OTHER || Math.abs(pts - before) < 0.005)
+					if (before == null || Math.abs(pts - before) < 0.005)
+					{
+						continue;
+					}
+					// Any roster's points moving means games are on, whether or not the play is shown.
+					lastPointsChangeAt = t;
+					if (owner == Owner.OTHER)
 					{
 						continue;
 					}
@@ -275,6 +290,11 @@ public final class Engine
 						.add(new PlayEvent.Impact(leagueId, owner, ctx.ownerName(row.roster_id), starter, pts - before));
 					offline.merge(p.getKey(), gap, Boolean::logicalOr);
 				}
+			}
+			if (prev == null)
+			{
+				// First poll of this league: poll at the live rate until the points prove quiet.
+				lastPointsChangeAt = t;
 			}
 			lastPoints.put(leagueId, cur);
 			lastSeenAt.put(leagueId, t);

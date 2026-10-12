@@ -1,6 +1,7 @@
 package com.layneburns.sleeperscape.core;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -154,6 +155,14 @@ public class EngineTest
 		return c;
 	}
 
+	/** The league's rows plus a third roster (neither mine nor my opponent's) with one player on {@code pts}. */
+	private static List<Sleeper.Matchup> withOther(List<Sleeper.Matchup> rows, double pts)
+	{
+		List<Sleeper.Matchup> all = new ArrayList<>(rows);
+		all.add(row(3, "9999", pts, pts));
+		return all;
+	}
+
 	private void stat(String pid, String key, double value)
 	{
 		stats.computeIfAbsent(pid, k -> new HashMap<>()).put(key, value);
@@ -165,6 +174,28 @@ public class EngineTest
 		engine.ingest(cycle(1000, 10, 5));
 		engine.tick(100_000);
 		assertTrue(released.isEmpty());
+	}
+
+	@Test
+	public void withoutEspnLiveFollowsPointChanges()
+	{
+		// Nothing polled yet: poll at the live rate.
+		assertTrue(engine.anyGameLive(0));
+		engine.ingest(cycle(1000, 10, 5));
+		assertTrue(engine.anyGameLive(1000 + Engine.LIVE_WINDOW_MS - 1));
+		// Points quiet for the whole window: idle.
+		engine.ingest(cycle(60_000, 10, 5));
+		assertFalse(engine.anyGameLive(1000 + Engine.LIVE_WINDOW_MS));
+		// Any roster's points moving (here an "other" team's) brings the live rate back.
+		Engine.Cycle c = cycle(600_000, 10, 5);
+		c.matchups.put(RD, withOther(c.matchups.get(RD), 3.5));
+		engine.ingest(c);
+		assertFalse(engine.anyGameLive(600_000 + Engine.LIVE_WINDOW_MS));
+		c = cycle(610_000, 10, 5);
+		c.matchups.put(RD, withOther(c.matchups.get(RD), 4.5));
+		engine.ingest(c);
+		assertTrue(engine.anyGameLive(610_000 + Engine.LIVE_WINDOW_MS - 1));
+		assertFalse(engine.anyGameLive(610_000 + Engine.LIVE_WINDOW_MS));
 	}
 
 	@Test

@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ScheduledExecutorService;
@@ -50,6 +51,9 @@ public final class Poller
 		void leaguesLoaded(List<LeagueContext> leagues);
 
 		void view(View view);
+
+		/** The NFL week (or season) changed under a running poller: restart polling from discovery. */
+		void weekChanged(int week);
 	}
 
 	static final String BASE = "https://api.sleeper.app/v1/";
@@ -57,7 +61,13 @@ public final class Poller
 	private static final int IDLE_POLL_SECONDS = 60;
 	private static final long RETRY_INIT_SECONDS = 60;
 	private static final long PROJECTIONS_EVERY_MS = 10 * 60_000L;
+	/** Projections only move the win % while games are on; between game days a refresh this often will do. */
+	private static final long PROJECTIONS_IDLE_MS = 6 * 3600_000L;
 	private static final long ROSTERS_EVERY_MS = 30 * 60_000L;
+	/** How often to re-read the NFL state (SPEC: hourly), so a client left open picks up the next week. */
+	private static final long STATE_EVERY_MS = 3600_000L;
+	/** After a stats URL fails, how long to stay on the next one before trying the preferred one again. */
+	private static final long STAT_URL_RETRY_MS = 5 * 60_000L;
 	// All three answer (confirmed 2026-10-11), but during live games the lean v1 one (~270 KB keyed by player)
 	// left almost every play without a stat line, so it looks cached; the ~1.3 MB arrays kept up. Fresh first.
 	private static final String[] STAT_URLS = {
@@ -89,9 +99,11 @@ public final class Poller
 	private int week;
 	private String userId;
 	private int statUrl;
+	private long statUrlFailedAt;
 	private int projectionUrl;
 	private long projectionsAt;
 	private long rostersAt;
+	private long stateAt;
 
 	public Poller(Fetcher http, Gson gson, ScheduledExecutorService exec, Engine engine, Config config,
 		PlayersCache playersCache, Status status)
@@ -211,6 +223,7 @@ public final class Poller
 					return;
 				}
 				rostersAt = System.currentTimeMillis();
+				stateAt = rostersAt;
 				status.leaguesLoaded(contexts);
 				status.status(contexts.size() + " leagues, week " + week);
 				cycle();
@@ -321,15 +334,29 @@ public final class Poller
 			return;
 		}
 		long now = System.currentTimeMillis();
+		// Live or idle, from the previous cycle's data. Idle cycles (no game on) fetch only what can change:
+		// the matchups, and the ESPN scoreboard that says when a game starts. The ~1.3 MB stats array waits
+		// for the first point change, and its stat lines land within the detail grace of that first play.
+		boolean live = engine.anyGameLive(now);
 		if (now - rostersAt > ROSTERS_EVERY_MS)
 		{
 			rostersAt = now;
 			refreshRosters();
 		}
-		if (now - projectionsAt > PROJECTIONS_EVERY_MS)
+		if (now - stateAt > STATE_EVERY_MS)
+		{
+			stateAt = now;
+			refreshState();
+		}
+		if (now - projectionsAt > (live ? PROJECTIONS_EVERY_MS : PROJECTIONS_IDLE_MS))
 		{
 			projectionsAt = now;
 			fetchProjections();
+		}
+		if (statUrl != 0 && now - statUrlFailedAt > STAT_URL_RETRY_MS)
+		{
+			// A failure moved us to a fallback (the last one lags the live scores): go back to the preferred one.
+			statUrl = 0;
 		}
 
 		Engine.Cycle c = new Engine.Cycle(now);
@@ -349,24 +376,27 @@ public final class Poller
 				return null;
 			}, exec));
 		}
-		String statsUrl = String.format(STAT_URLS[statUrl], season, week, seasonType);
-		parts.add(http.get(statsUrl).handleAsync((json, err) ->
+		if (live)
 		{
-			if (err != null)
+			String statsUrl = String.format(STAT_URLS[statUrl], season, week, seasonType);
+			parts.add(http.get(statsUrl).handleAsync((json, err) ->
 			{
-				statUrl = (statUrl + 1) % STAT_URLS.length;
+				if (err != null)
+				{
+					nextStatUrl();
+					return null;
+				}
+				try
+				{
+					c.stats = Stats.parse(gson, json);
+				}
+				catch (RuntimeException e)
+				{
+					nextStatUrl();
+				}
 				return null;
-			}
-			try
-			{
-				c.stats = Stats.parse(gson, json);
-			}
-			catch (RuntimeException e)
-			{
-				statUrl = (statUrl + 1) % STAT_URLS.length;
-			}
-			return null;
-		}, exec));
+			}, exec));
+		}
 		if (config.useEspn())
 		{
 			parts.add(http.get(Espn.SCOREBOARD).handleAsync((json, err) ->
@@ -411,8 +441,36 @@ public final class Poller
 			{
 				status.status("Internal error: " + e);
 			}
-			int next = engine.anyGameLive() ? Math.max(5, config.pollSeconds()) : IDLE_POLL_SECONDS;
+			int next = engine.anyGameLive(System.currentTimeMillis()) ? Math.max(5, config.pollSeconds()) : IDLE_POLL_SECONDS;
 			later(this::cycle, next, TimeUnit.SECONDS);
+		}, exec);
+	}
+
+	private void nextStatUrl()
+	{
+		statUrl = (statUrl + 1) % STAT_URLS.length;
+		statUrlFailedAt = System.currentTimeMillis();
+	}
+
+	/**
+	 * Re-reads the NFL state. A new week (or season type) means new matchups, so everything is rediscovered
+	 * from scratch rather than diffed against the old week's points. The week override wins as at init.
+	 */
+	private void refreshState()
+	{
+		get(BASE + "state/nfl", Sleeper.State.class).whenCompleteAsync((state, err) ->
+		{
+			if (stopped || err != null || state == null)
+			{
+				return;
+			}
+			String newSeason = state.league_season != null ? state.league_season : state.season;
+			String newType = state.season_type == null || state.season_type.isEmpty() ? "regular" : state.season_type;
+			int newWeek = config.weekOverride() > 0 ? config.weekOverride() : Math.max(1, state.week);
+			if (newWeek != week || !Objects.equals(newSeason, season) || !newType.equals(seasonType))
+			{
+				status.weekChanged(newWeek);
+			}
 		}, exec);
 	}
 
